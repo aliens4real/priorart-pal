@@ -41,7 +41,7 @@ A patent's extracted graph references entries from all five.
 
 ## 1. Node types
 
-Twenty-six canonical node types, grouped into eight categories. Pick the granularity carefully — too few and we collapse meaningful distinctions; too many and every patent looks unique.
+Twenty-eight canonical node types, grouped into eight categories. Pick the granularity carefully — too few and we collapse meaningful distinctions; too many and every patent looks unique.
 
 ### 1.1 Sensors
 
@@ -205,7 +205,20 @@ Twenty-six canonical node types, grouped into eight categories. Pick the granula
 - **Extraction rule:** Anything where the human and the AV stack interact bidirectionally. Includes both information presentation (HUD, cluster) and intent capture (button, voice, gaze).
 - **Attributes:** `function` (display / input / monitoring / multi)
 
-### 1.8 Data sources
+### 1.8 Data sources / persistence
+
+#### `DATABASE`
+> A structured data store — on-vehicle (e.g., HD-map cache, telemetry log, audit trail) or off-board (fleet operations DB, ride-history DB, ML feature store). Distinct from `SERVER` (which *hosts* databases) and from `HD_MAP_DATA` (which is one specific kind of stored content).
+
+- **Tight synonyms:** database, DB, data store, datastore, repository, data repository, knowledge base, KB, table store, key-value store, document store, time-series database, telemetry database, log database, feature store, vector database, vector store
+- **Loose synonyms:** storage, archive, registry, ledger, cache, memory store
+- **Extraction rule:** Extract a `DATABASE` node whenever the disclosure references a structured store accessed by the system — local or remote. Capture **what's stored** as a `content_kind` attribute, **where it lives** as a `location` attribute, and **how it's accessed** via incoming `READS_FROM` / `WRITES_TO` edges. If the patent references a server that *contains* a database, extract both: the `SERVER` and the `DATABASE`, linked via `PART_OF` (the database is part of the server).
+- **Disambiguation:** vs. `HD_MAP_DATA` — that's a specific *kind of stored content* with its own behavior; `DATABASE` is the generic structured store. If both apply (e.g., "the HD map is stored in a vector database"), extract both, linked via `PART_OF`. vs. `SERVER` — server is the compute host; database is the data layer it serves.
+- **Attributes:**
+  - `location` (on_vehicle / cloud / roadside_edge / mobile_device)
+  - `content_kind` (hd_map / telemetry / event_log / audit / customer / training_data / vector_embeddings / configuration / other)
+  - `paradigm` (relational / document / key_value / time_series / vector / graph / object / unspecified)
+  - `update_method` (static / batch / streaming / OTA)
 
 #### `HD_MAP_DATA`
 > High-definition map data used for localization, planning, and prediction. Modeled as a node because it is a discrete data input the rest of the system depends on.
@@ -268,13 +281,37 @@ Twenty-six canonical node types, grouped into eight categories. Pick the granula
 - **Attributes:** `geometry_type` (4-way / T / roundabout / merge / diverge / unspecified), `signalized` (true / false / unspecified), `lane_count_in/out`
 
 #### `MOBILE_DEVICE`
-> A user-carried smartphone, tablet, or wearable that interacts with the AV stack — for ride-hailing dispatch, remote summon, key-as-a-phone, infotainment pairing, ride-sharing UX, or driver/rider authentication.
+> A user-carried smartphone, tablet, or wearable that interacts with the AV stack. Generic catch-all for cases where the disclosure doesn't specify whose device it is (e.g., "a fleet operator's mobile device", "a remote user's phone", "a third-party device").
 
-- **Tight synonyms:** mobile device, smartphone, phone, smart phone, mobile phone, tablet, smartwatch, wearable, user device, rider device, passenger device, fleet rider app device
+- **Tight synonyms:** mobile device, smartphone, phone, smart phone, mobile phone, tablet, smartwatch, wearable, user device, fleet operator device, remote user device, third-party mobile device
 - **Loose synonyms:** device (loose — could mean any onboard device), terminal
-- **Extraction rule:** Extract when the disclosure specifically references a user-carried device interacting with the AV stack (typically over cellular or BLE). The *app* on the device is captured as an attribute, not a separate node.
-- **Disambiguation:** vs. `SERVER` — phones aren't servers even when they expose APIs. vs. `DRIVER_INTERFACE` — that's the in-cabin UI; mobile devices are user-carried.
-- **Attributes:** `role` (rider_app / fleet_app / digital_key / remote_summon / passenger_infotainment), `connection_to_vehicle` (cellular / BLE / NFC / wifi)
+- **Extraction rule:** Use when the disclosure references a user-carried device but doesn't specify *whose*. When the role is identified (driver vs passenger), prefer the specific subtypes below. The *app* on the device is captured as an attribute, not a separate node.
+- **Disambiguation:** vs. `DRIVER_MOBILE_DEVICE` / `PASSENGER_MOBILE_DEVICE` — use those when the disclosure specifies the carrier. vs. `SERVER` — phones aren't servers even when they expose APIs. vs. `DRIVER_INTERFACE` — that's the in-cabin UI; mobile devices are user-carried.
+- **Attributes:** `role` (fleet_app / digital_key / remote_summon / third_party / unspecified), `connection_to_vehicle` (cellular / BLE / NFC / wifi)
+
+#### `DRIVER_MOBILE_DEVICE`
+> A smartphone / tablet / wearable carried by the *driver* (or designated operator) — distinct because the trust model, pairing pattern, and use cases (digital key, remote summon, vehicle diagnostics, infotainment pairing) differ from devices carried by passengers.
+
+- **Tight synonyms:** driver's phone, driver phone, driver's smartphone, driver mobile device, owner's phone, key fob phone, digital key phone, remote summon device, driver's wearable, driver smartwatch
+- **Loose synonyms:** authorized device, paired device, registered phone
+- **Extraction rule:** Use when the disclosure makes clear the device belongs to the *driver / operator / owner* — typically associated with paired authentication, digital-key features, remote summon, or pre-drive vehicle interactions. If the patent is about ride-hailing (driver vs rider), this is the human at the wheel (or the operator triggering autonomous summon).
+- **Disambiguation:** vs. `PASSENGER_MOBILE_DEVICE` — passenger devices belong to non-driver occupants; their permissions and interactions differ. vs. `MOBILE_DEVICE` — generic when role is unspecified. vs. `DRIVER_INTERFACE` — that's the in-cabin UI; this is a separate device the driver carries.
+- **Attributes:**
+  - `role` (digital_key / remote_summon / diagnostics / infotainment_pair / driver_authentication / driver_monitoring_companion)
+  - `paired` (true / false / unspecified)
+  - `connection_to_vehicle` (cellular / BLE / NFC / wifi / UWB)
+
+#### `PASSENGER_MOBILE_DEVICE`
+> A smartphone / tablet / wearable carried by a non-driver occupant — used for ride-hailing rider experience, in-cabin entertainment pairing, ride sharing identity, and cabin-environment personalization.
+
+- **Tight synonyms:** passenger's phone, passenger phone, passenger's smartphone, passenger mobile device, rider's phone, rider phone, rider device, occupant device, rider app device, robotaxi rider device
+- **Loose synonyms:** guest device, in-cabin device
+- **Extraction rule:** Use when the disclosure references a device carried by a non-driver occupant — most commonly in robotaxi / ride-sharing patents (rider summons / unlocks / personalizes the cabin). Also covers patents about in-cabin infotainment streaming to a passenger's device.
+- **Disambiguation:** vs. `DRIVER_MOBILE_DEVICE` — driver vs non-driver carrier. vs. `MOBILE_DEVICE` — generic when carrier role is unspecified.
+- **Attributes:**
+  - `role` (rider_app / cabin_personalization / infotainment_streaming / fare_payment / rider_authentication / accessibility_assist)
+  - `paired` (true / false / unspecified)
+  - `connection_to_vehicle` (cellular / BLE / NFC / wifi)
 
 ### 1.10 Software methods
 
