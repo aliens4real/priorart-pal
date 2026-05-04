@@ -1,0 +1,26 @@
+[project]
+name = "priorart-pal-infra"
+version = "0.1.0"
+description = "AWS CDK app for PriorArt Pal"
+requires-python = ">=3.12"
+dependencies = [
+    "aws-cdk-lib>=2.180.0,<3.0.0",
+    "constructs>=10.0.0,<11.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "ruff>=0.7.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"

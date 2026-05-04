@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+*.egg-info/
+.uv/
+
+# Node
+node_modules/
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+# Env / secrets — NEVER COMMIT
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# CDK
+infra/cdk.out/
+infra/.cdk.staging/
+
+# AWS
+.aws-sam/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
