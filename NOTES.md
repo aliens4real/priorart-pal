@@ -33,10 +33,47 @@ Append-only log of decisions, gotchas, and costs. Newest at the top.
 
 **Open items**
 
-- Run `aws configure` (Michael's hands)
+- Run `aws configure` (Michael's hands) — pending AWS account reactivation
 - Run `cdk bootstrap` after credentials are set (requires "yes, deploy")
 - Sign up for Cohere + Voyage AI accounts
-- Decide CPC subclass list for patent corpus (Phase 2)
-- Add `.github/workflows/ci.yml` via GitHub web UI (gh CLI OAuth lacks
-  `workflow` scope; refresh attempt didn't take. File exists locally,
-  ready to paste into the GitHub Actions UI when convenient.)
+
+**Closed**
+
+- ~~Add `.github/workflows/ci.yml` via GitHub web UI~~ — done 2026-05-03
+- ~~Decide corpus scope~~ — **autonomous passenger vehicles**, seed list of
+  10 foundational patents confirmed (see [`docs/seed-corpus.md`](docs/seed-corpus.md))
+
+---
+
+## 2026-05-03 — Phase 2 design: structural retrieval (post-scaffold)
+
+**Decision: visual claim builder + structural RAG, not vanilla text RAG.**
+
+Two patents in this art can use entirely different vocabulary for the same
+architecture, or identical vocabulary for completely different architectures.
+Keyword/embedding-only retrieval misses both. Examiners think structurally
+first (system topology), then check functional limitations against that
+topology — the tool should mirror that.
+
+**Approach:**
+
+- **Constrained ontology** (Option A from design discussion): a fixed set
+  of node types (Sensor, Controller, Server, Vehicle, Network, Actuator, …)
+  and edge types (sends, controls, comprises, mounted_on, …) tuned for AV.
+  Living spec — we iterate as we ingest real patents.
+- **Pre-processing pipeline:** for each patent, Claude reads claims + spec,
+  extracts a JSON graph in the ontology, stores alongside text chunks.
+- **Visual claim builder** (frontend): React Flow canvas, drag-drop nodes,
+  snap-connect typed edges, optional functional text per node.
+- **Hybrid retrieval:** structural similarity + embedding similarity over
+  node/edge labels + bonus weight for "must have" nodes.
+- **Output:** top-N patents with side-by-side graph visualization and
+  Claude-generated paragraph cites for matched elements.
+
+**Why this is a stronger AHEAD story than vanilla RAG:** demonstrates
+domain-specific ontology design, structural / multi-vector retrieval,
+and a bespoke UX for the actual user (examiners), not just "I bolted
+embeddings to Postgres".
+
+**Skipped from spec, kept on the table:** Option C (hybrid free-form +
+ontology) is the v2 evolution if Option A's edge cases bite.
