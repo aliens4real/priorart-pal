@@ -41,7 +41,7 @@ A patent's extracted graph references entries from all five.
 
 ## 1. Node types
 
-Twenty-eight canonical node types, grouped into eight categories. Pick the granularity carefully — too few and we collapse meaningful distinctions; too many and every patent looks unique.
+Thirty canonical node types, grouped into eight categories. Pick the granularity carefully — too few and we collapse meaningful distinctions; too many and every patent looks unique.
 
 ### 1.1 Sensors
 
@@ -300,6 +300,33 @@ Twenty-eight canonical node types, grouped into eight categories. Pick the granu
   - `role` (digital_key / remote_summon / diagnostics / infotainment_pair / driver_authentication / driver_monitoring_companion)
   - `paired` (true / false / unspecified)
   - `connection_to_vehicle` (cellular / BLE / NFC / wifi / UWB)
+
+#### `GROUND_MOBILE_ROBOT`
+> Non-passenger autonomous ground platform — warehouse robots, sidewalk delivery bots, industrial AGVs, mobile drive units, agricultural rovers, inspection robots. Important for coordinated-mobility claims and **analogous-art rejections** — many warehouse / delivery / agricultural autonomy patents anticipate passenger-AV claims at the perception, planning, or fleet-coordination level.
+
+- **Tight synonyms:** robot, mobile robot, autonomous mobile robot, AMR, autonomous ground vehicle, AGV, automated guided vehicle, mobile drive unit, MDU, warehouse robot, delivery robot, sidewalk robot, last-mile delivery robot, ground drone, inspection robot, agricultural robot
+- **Loose synonyms:** unmanned vehicle (loose — could mean aerial or marine), self-driving robot, drone (loose — usually aerial)
+- **Extraction rule:** Extract when the disclosure references an autonomous or remotely-supervised ground platform that is *not* a passenger vehicle. If the patent's whole subject is a delivery robot or warehouse AGV, that platform is treated as the disclosure's "vehicle" — extract `GROUND_MOBILE_ROBOT` as the central node where a passenger-AV patent would have `VEHICLE`. If the disclosure is about a passenger AV that *interacts* with such robots (coordinated curb-side delivery, mixed pedestrian-and-robot perception), extract them as a separate node alongside the ego `VEHICLE`.
+- **Disambiguation:** vs. `VEHICLE` / `NEARBY_VEHICLE` — those are passenger vehicles. vs. `AERIAL_VEHICLE` — this rolls; that flies.
+- **Attributes:**
+  - `form_factor` (warehouse_AGV / sidewalk_delivery / industrial_floor / inspection / agricultural / cleaning / quadruped / humanoid / other)
+  - `payload_class` (light / heavy / hazardous / passenger_capable / unspecified)
+  - `navigation_mode` (rail_guided / SLAM / fiducial / GPS / hybrid / unspecified)
+  - `is_disclosure_subject` (true if the patent is *about* this robot vs. just referring to one)
+
+#### `AERIAL_VEHICLE`
+> Autonomous or remotely-piloted aerial platform — UAV, multicopter, fixed-wing drone, VTOL/eVTOL. Relevant for V2X-with-drones claims, drone-as-roadside-unit, drone-assisted perception (overhead view feeding ground vehicles), package-delivery coordination, and the eVTOL-passenger-mobility category that increasingly cross-cites with road-AV art.
+
+- **Tight synonyms:** UAV, unmanned aerial vehicle, drone, aerial drone, aerial vehicle, autonomous aerial vehicle, multicopter, quadcopter, hexacopter, octocopter, fixed-wing UAV, VTOL, eVTOL, electric vertical takeoff and landing, delivery drone, surveillance drone, mapping drone
+- **Loose synonyms:** aircraft (loose — could be manned), flying robot, UAS, unmanned aircraft system
+- **Extraction rule:** Extract when the disclosure references an aerial autonomous platform. As with `GROUND_MOBILE_ROBOT`, if the patent's subject *is* the aerial vehicle, treat it as the central platform node; if the patent is about a passenger AV that interacts with one (drone-fed overhead perception, V2I from a drone, package-handoff coordination), extract as a separate adjacent node.
+- **Disambiguation:** vs. `GROUND_MOBILE_ROBOT` — flies vs. rolls. vs. `VEHICLE` — passenger eVTOL is genuinely ambiguous; if the disclosure treats it as a passenger-mobility platform with seats and a driver/operator, extract it as `VEHICLE` with `body_type=eVTOL` instead. Use `AERIAL_VEHICLE` for unmanned or cargo-only flying platforms.
+- **Attributes:**
+  - `form_factor` (quadcopter / hexacopter / octocopter / fixed_wing / VTOL / eVTOL / hybrid_VTOL / lighter_than_air / other)
+  - `purpose` (delivery / surveillance / inspection / mapping / passenger_eVTOL / data_relay / agricultural / other)
+  - `max_payload_kg`
+  - `max_endurance_min`
+  - `is_disclosure_subject` (true if the patent is *about* the aerial vehicle vs. just referring to one)
 
 #### `PASSENGER_MOBILE_DEVICE`
 > A smartphone / tablet / wearable carried by a non-driver occupant — used for ride-hailing rider experience, in-cabin entertainment pairing, ride sharing identity, and cabin-environment personalization.
