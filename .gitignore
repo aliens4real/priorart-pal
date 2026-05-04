@@ -44,3 +44,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Local-only patent corpus (never commit)
+data_cache/
