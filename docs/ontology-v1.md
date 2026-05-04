@@ -15,11 +15,25 @@ For each canonical entry, this document specifies:
 | Field | Purpose |
 |---|---|
 | **Code** | Stable machine identifier (e.g., `TELEMATICS_CONTROLLER`). Never changes once published. |
+| **Parent type** *(optional)* | If this code is a specialization, the parent canonical code. Used by the matcher for broadest-reasonable-interpretation reasoning — a patent disclosing a specialization (e.g., `PEDESTRIAN`) reads on a query node of the parent (`ROAD_OBSTACLE`) at full credit; a patent disclosing the parent partially reads on a query for the specialization. |
 | **Description** | One-paragraph definition; the source of truth when synonyms are ambiguous. |
 | **Synonyms (tight)** | Phrases that always map to this code. Used for high-confidence extraction and the default-on synonym filters in the query builder. |
 | **Synonyms (loose)** | Phrases that often map to this code but need disambiguation. Surfaced as "tentative" in match results so the examiner can confirm. |
 | **Extraction rule** | Guidance Claude follows during ingestion. Includes "must include" structural cues and "do not confuse with" notes. |
 | **Disambiguation** | Which other canonical types this is most often confused with, and how to tell them apart. |
+
+### On `parent_type` and the BRI matcher
+
+Patents and claim language operate at multiple levels of generality. A patent that discloses a "pedestrian detector" anticipates a claim's "obstacle detector" element — because *pedestrian is a kind of obstacle*. The matcher needs to know that.
+
+We model this with an explicit `parent_type` field on each canonical code. The matcher's rules:
+
+- **Patent more specific than query** — patent has `PEDESTRIAN`, query has `ROAD_OBSTACLE` → **full match** (the specific reads on the generic).
+- **Patent less specific than query** — patent has `ROAD_OBSTACLE`, query has `PEDESTRIAN` → **partial match, flagged** (the generic doesn't fully disclose the specific; examiner confirms).
+- **Same type** — full match.
+- **Sibling types under same parent** — no match (e.g., `PEDESTRIAN` and `ANIMAL` are both `ROAD_OBSTACLE` but distinct).
+
+Hierarchies in v1: `ACTUATOR` parent, `MOBILE_DEVICE` parent, `NEARBY_VEHICLE` parent, `ROAD_OBSTACLE` parent, `ENERGY_STORAGE_DEVICE` parent. More may emerge as the corpus grows.
 
 Everything here is **v1 draft** — designed to be redlined. The expectation is iteration: ingest the seed corpus, see what doesn't fit, refine.
 
@@ -41,7 +55,7 @@ A patent's extracted graph references entries from all five.
 
 ## 1. Node types
 
-Thirty canonical node types, grouped into eight categories. Pick the granularity carefully — too few and we collapse meaningful distinctions; too many and every patent looks unique.
+Forty-nine canonical node types across nine categories. Several types form parent-child hierarchies (see "On `parent_type`" above). Pick the granularity carefully — too few and we collapse meaningful distinctions; too many and every patent looks unique.
 
 ### 1.1 Sensors
 
@@ -80,6 +94,15 @@ Thirty canonical node types, grouped into eight categories. Pick the granularity
 - **Extraction rule:** Map any sensor providing latitude/longitude or absolute pose. Includes RTK/PPP-corrected GNSS. Visual-inertial odometry that produces absolute pose via map matching is **not** this — that's `PERCEPTION_MODULE` with a localization role.
 - **Disambiguation:** vs. `INERTIAL_SENSOR` — IMU is relative, GNSS is absolute. vs. dead-reckoning modules — those are `PERCEPTION_MODULE` (compute), not sensors.
 - **Attributes:** `constellations`, `correction_source` (none / SBAS / RTK / PPP), `update_rate_hz`
+
+#### `DRIVER_STATE_SENSOR`
+> Sensor specifically aimed at the driver / occupants for state monitoring — gaze, attention, drowsiness, biometric vital signs, posture, hands-on-wheel.
+
+- **Tight synonyms:** driver monitoring system, DMS, driver-facing camera, gaze-tracking camera, gaze sensor, drowsiness detection sensor, eye tracker, attention sensor, vital signal detection unit, biometric sensor, EEG sensor, ECG sensor, EOG sensor, PPG sensor, electroencephalogram sensor, electrocardiogram sensor, photoplethysmogram sensor, hands-on-wheel sensor, capacitive steering sensor
+- **Loose synonyms:** in-cabin camera, internal camera, occupant sensor, in-cabin sensor
+- **Extraction rule:** Distinct from generic `CAMERA` because it is *specifically* sensing the driver / occupant for state classification. If a patent describes a single camera that does both road perception and driver monitoring, extract two nodes (one `CAMERA`, one `DRIVER_STATE_SENSOR`) linked via `PART_OF` to the same `CAMERA_MODULE` if disclosed.
+- **Disambiguation:** vs. `CAMERA` — interior cameras only become this when the disclosure ties them to driver/occupant state. vs. `DRIVER_INTERFACE` — that's the HMI surface for input/output; this is the sensing channel.
+- **Attributes:** `signal_type` (visible / IR / EEG / ECG / EOG / PPG / capacitive / other), `target` (driver / passengers / both), `update_rate_hz`
 
 ### 1.2 Functional compute modules
 
@@ -141,7 +164,16 @@ Thirty canonical node types, grouped into eight categories. Pick the granularity
 
 ### 1.4 Actuators
 
+#### `ACTUATOR`
+> Generic parent for any electromechanical mechanism that converts a control signal into vehicle motion or motion-affecting force. Use when the patent says "actuator" without specifying steering / throttle / brake, or when the disclosure speaks at the level of "an actuator coupled to the controller."
+
+- **Tight synonyms:** actuator, electromechanical actuator, drive-by-wire actuator, motion actuator, wheel actuator (loose; could be steering or brake)
+- **Loose synonyms:** mechanism, drive mechanism, control mechanism
+- **Extraction rule:** Use as the catch-all when the disclosure is intentionally generic. When the patent specifies the function, prefer `STEERING_ACTUATOR`, `THROTTLE_ACTUATOR`, or `BRAKE_ACTUATOR`.
+- **Attributes:** `function_inferred` (unspecified / lateral / longitudinal / both)
+
 #### `STEERING_ACTUATOR`
+- **Parent type:** `ACTUATOR`
 > Mechanism that physically turns the wheels in response to a steering command.
 
 - **Tight synonyms:** steering actuator, electric power steering, EPS, steer-by-wire, steering motor, rack-mounted EPS, column-mounted EPS, steering rack actuator
@@ -150,14 +182,16 @@ Thirty canonical node types, grouped into eight categories. Pick the granularity
 - **Attributes:** `architecture` (column EPS / rack EPS / steer-by-wire), `redundancy`
 
 #### `THROTTLE_ACTUATOR`
+- **Parent type:** `ACTUATOR`
 > Commands engine torque or drive-motor torque for forward propulsion.
 
-- **Tight synonyms:** throttle actuator, throttle-by-wire, accelerator actuator, electronic throttle, drive-by-wire throttle, motor torque controller (when EV), powertrain command interface
+- **Tight synonyms:** throttle actuator, throttle-by-wire, accelerator actuator, electronic throttle, drive-by-wire throttle, motor torque controller (when EV), powertrain command interface, vehicle speed adjusting actuator
 - **Loose synonyms:** acceleration actuator, propulsion actuator
 - **Extraction rule:** Commands forward motion. For EVs, this often is the inverter/motor torque request, which gets extracted as `THROTTLE_ACTUATOR` for ontology consistency even though there's no literal throttle.
 - **Attributes:** `powertrain_type` (ICE / hybrid / EV / fuel-cell)
 
 #### `BRAKE_ACTUATOR`
+- **Parent type:** `ACTUATOR`
 > Applies braking force, including regenerative braking.
 
 - **Tight synonyms:** brake actuator, brake-by-wire, electronic brake, EBC, electric parking brake, regenerative braking system, brake hydraulic actuator, brake booster
@@ -233,7 +267,13 @@ Thirty canonical node types, grouped into eight categories. Pick the granularity
 
 > Things in the world the ego vehicle perceives, predicts, communicates with, or navigates around. These are *not* components of the ego vehicle — they are the surrounding context. They show up as referents in claims constantly ("a sensor that detects a preceding vehicle", "the system communicates with a roadside traffic light").
 >
-> Six canonical types defined here. **Likely additions** I expect you'll want — flag yes/no on each: `PEDESTRIAN`, `CYCLIST`, `TRAFFIC_SIGN`, `ROAD_OBSTACLE`, `LANE_MARKING`. Adding any of those follows the same pattern as the six below.
+> Organized into three sub-categories:
+> - **Vehicles & peer platforms** — ego, nearby, preceding, ground robot, aerial
+> - **Road obstacles** (`ROAD_OBSTACLE` parent + 7 child types: pedestrian, cyclist, animal, debris, accident scene, hazard, work zone)
+> - **Roadway features** — road, intersection, lane marking, traffic light, traffic sign, parking space
+> - **Human-related** — operator, mobile device variants
+>
+> The `ROAD_OBSTACLE` hierarchy mirrors examiner BRI: a patent disclosing a "pedestrian detector" reads on a claim's "obstacle detector" because *pedestrian is a kind of obstacle*. The matcher uses the `parent_type` field to apply this reasoning automatically.
 
 #### `VEHICLE`
 > The ego vehicle itself, treated as a structural element when the disclosure cares about its physical form (sedan / SUV / truck / motorcycle / bus), powertrain (ICE / hybrid / EV / fuel-cell), or the fact that components are mounted on / integrated with it.
@@ -254,6 +294,7 @@ Thirty canonical node types, grouped into eight categories. Pick the granularity
 - **Attributes:** `relative_position` (preceding / following / adjacent_left / adjacent_right / oncoming / cross_traffic / unspecified), `count` (single / multiple / fleet)
 
 #### `PRECEDING_VEHICLE`
+- **Parent type:** `NEARBY_VEHICLE`
 > The vehicle directly ahead of the ego vehicle in the same lane. Distinct canonical type because it is *the* central referent in adaptive cruise control, lane following, automated platooning, and rear-end collision avoidance claims.
 
 - **Tight synonyms:** preceding vehicle, lead vehicle, leading vehicle, vehicle ahead, vehicle in front, front vehicle, forward vehicle, target vehicle (in ACC/CACC context)
@@ -290,6 +331,7 @@ Thirty canonical node types, grouped into eight categories. Pick the granularity
 - **Attributes:** `role` (fleet_app / digital_key / remote_summon / third_party / unspecified), `connection_to_vehicle` (cellular / BLE / NFC / wifi)
 
 #### `DRIVER_MOBILE_DEVICE`
+- **Parent type:** `MOBILE_DEVICE`
 > A smartphone / tablet / wearable carried by the *driver* (or designated operator) — distinct because the trust model, pairing pattern, and use cases (digital key, remote summon, vehicle diagnostics, infotainment pairing) differ from devices carried by passengers.
 
 - **Tight synonyms:** driver's phone, driver phone, driver's smartphone, driver mobile device, owner's phone, key fob phone, digital key phone, remote summon device, driver's wearable, driver smartwatch
@@ -329,6 +371,7 @@ Thirty canonical node types, grouped into eight categories. Pick the granularity
   - `is_disclosure_subject` (true if the patent is *about* the aerial vehicle vs. just referring to one)
 
 #### `PASSENGER_MOBILE_DEVICE`
+- **Parent type:** `MOBILE_DEVICE`
 > A smartphone / tablet / wearable carried by a non-driver occupant — used for ride-hailing rider experience, in-cabin entertainment pairing, ride sharing identity, and cabin-environment personalization.
 
 - **Tight synonyms:** passenger's phone, passenger phone, passenger's smartphone, passenger mobile device, rider's phone, rider phone, rider device, occupant device, rider app device, robotaxi rider device
@@ -339,6 +382,120 @@ Thirty canonical node types, grouped into eight categories. Pick the granularity
   - `role` (rider_app / cabin_personalization / infotainment_streaming / fare_payment / rider_authentication / accessibility_assist)
   - `paired` (true / false / unspecified)
   - `connection_to_vehicle` (cellular / BLE / NFC / wifi)
+
+#### `ROAD_OBSTACLE`
+> Generic catch-all for things in or near the roadway that the ego vehicle should perceive, classify, and avoid or respond to. Use as the canonical type when the patent's disclosure is generic ("an obstacle", "an object in the roadway"); use a more specific child type when the disclosure names what the obstacle is.
+
+- **Tight synonyms:** obstacle, road obstacle, object in the roadway, road object, hazard (loose; see HAZARD child), barrier, blockage, target object (in collision-avoidance context), foreign object, stationary object, dynamic object
+- **Loose synonyms:** object (very loose — could mean any node), thing, item, target (loose — could mean target vehicle / target lane)
+- **Extraction rule:** Map generic obstacle / object disclosures here. When the patent specifies the kind of obstacle (pedestrian, cyclist, animal, debris, etc.), prefer the child type — but if the disclosure switches between generic and specific in the same claim, extract both nodes (a generic `ROAD_OBSTACLE` and the specific child) so the matcher can reason at either level.
+- **Disambiguation:** vs. `NEARBY_VEHICLE` family — vehicles are agents, not obstacles, even though they can collide; keep the vehicle taxonomy separate. vs. `LANE_MARKING` / `TRAFFIC_SIGN` — those are road infrastructure, not obstacles.
+- **Attributes:** `agency` (dynamic_agent / static_object / environmental_condition), `classified_by` (perception / V2X / map / unspecified)
+
+#### `PEDESTRIAN`
+- **Parent type:** `ROAD_OBSTACLE`
+> A human on foot in or near the roadway.
+
+- **Tight synonyms:** pedestrian, person, walker, foot traffic, jaywalker, person crossing, vulnerable road user (loose — also covers cyclists), VRU
+- **Loose synonyms:** human, individual
+- **Extraction rule:** Use when the disclosure specifically references a person on foot. If the patent uses "pedestrian and cyclist" together as a category, extract both as separate nodes.
+- **Attributes:** `posture` (standing / walking / running / fallen / unspecified), `crossing_intent` (estimated / declared / unknown)
+
+#### `CYCLIST`
+- **Parent type:** `ROAD_OBSTACLE`
+> A human riding a bicycle, e-bike, scooter, or similar small wheeled personal mobility device in or near the roadway.
+
+- **Tight synonyms:** cyclist, bicyclist, bike rider, e-bike rider, scooter rider, micromobility rider, vulnerable road user (loose — also covers pedestrians)
+- **Loose synonyms:** rider (loose — could mean motorcyclist or passenger), bicycle (loose — refers to vehicle, not person)
+- **Extraction rule:** Includes any small personal-mobility human-powered or low-power device with a single rider (bicycle, e-bike, e-scooter, mobility scooter). Distinguish from motorcyclist if the disclosure makes the distinction; otherwise prefer `CYCLIST` for non-motorcycle two-wheel.
+- **Attributes:** `device_type` (bicycle / e-bike / e-scooter / mobility-scooter / unspecified)
+
+#### `ANIMAL`
+- **Parent type:** `ROAD_OBSTACLE`
+> A non-human living creature in or near the roadway — wildlife, livestock, pets.
+
+- **Tight synonyms:** animal, deer, wildlife, livestock, dog, cat, pet, large animal, small animal
+- **Loose synonyms:** creature, fauna
+- **Extraction rule:** Use whenever the disclosure references animals as a perceived entity. If the patent specifies category (large vs. small, wildlife vs. domestic), capture as attribute.
+- **Attributes:** `size_class` (small / medium / large / unspecified), `category` (wildlife / livestock / domestic / unspecified)
+
+#### `DEBRIS`
+- **Parent type:** `ROAD_OBSTACLE`
+> Physical objects in the roadway that don't move under their own power — fallen trees, tire shred, dropped cargo, broken parts, lost loads.
+
+- **Tight synonyms:** debris, road debris, fallen object, dropped cargo, lost load, tire shred, fallen tree, fallen branch, broken part, road hazard (loose; see HAZARD), foreign object debris, FOD
+- **Loose synonyms:** object on road, item in lane
+- **Extraction rule:** Static physical objects, distinct from environmental conditions (`HAZARD`) and from active incident scenes (`ACCIDENT_SCENE`).
+- **Attributes:** `size_class` (small / medium / large / unspecified), `material` (organic / metal / cargo / unspecified)
+
+#### `ACCIDENT_SCENE`
+- **Parent type:** `ROAD_OBSTACLE`
+> An active incident — wrecked or disabled vehicles, deployed airbags, scattered parts, emergency responders, flares, cones placed in response to a collision.
+
+- **Tight synonyms:** accident scene, crash scene, collision scene, disabled vehicle, wrecked vehicle, emergency response scene, incident scene, broken-down vehicle
+- **Loose synonyms:** stopped vehicle (loose — could be just stopped, not an accident), emergency situation
+- **Extraction rule:** Use when the disclosure references the *scene* itself, especially involving emergency responders, deployed safety equipment, or collision aftermath. Distinguish from `WORK_ZONE` (planned construction) and from `DEBRIS` (physical objects without ongoing incident context).
+- **Attributes:** `responders_present` (true / false / unspecified), `vehicles_involved_count`
+
+#### `HAZARD`
+- **Parent type:** `ROAD_OBSTACLE`
+> Environmental danger condition — water, ice, oil spill, sinkhole, fog patch, smoke, flooding. Not a discrete object, but a region of the roadway with degraded driveability.
+
+- **Tight synonyms:** hazard, road hazard, ice patch, water on road, hydroplaning condition, oil spill, sinkhole, pothole, fog patch, smoke, flooding, washout, surface contamination
+- **Loose synonyms:** danger, risk, unsafe area, slippery condition
+- **Extraction rule:** Use for *condition*-type obstacles, not discrete objects. If the patent describes degraded surface conditions or visibility, this is the type. Distinguish from `DEBRIS` (discrete physical objects) and `WEATHER_DATA` content type (which is the data describing weather).
+- **Attributes:** `condition_type` (ice / water / oil / sinkhole / pothole / fog / smoke / flooding / other), `severity` (low / medium / high / unspecified)
+
+#### `WORK_ZONE`
+- **Parent type:** `ROAD_OBSTACLE`
+> A planned construction or maintenance zone — cones, barriers, workers, equipment, signage indicating a temporary lane shift or closure.
+
+- **Tight synonyms:** work zone, construction zone, road work, road construction, maintenance zone, lane closure, temporary work zone, traffic cone arrangement
+- **Loose synonyms:** roadwork, construction (loose — could mean any building activity)
+- **Extraction rule:** Distinguish from `ACCIDENT_SCENE` (unplanned incident) and `HAZARD` (environmental condition). Work zones are intentional and typically signaled.
+- **Attributes:** `signaled_by` (cones / barriers / signs / arrow_board / multi), `worker_present` (true / false / unspecified)
+
+#### `ROAD`
+> The roadway itself — the topological substrate the ego vehicle drives on. Used when the disclosure references "the road" / "roadway" as a structural element distinct from intersections, lanes, or the vehicles on it.
+
+- **Tight synonyms:** road, roadway, highway, street, freeway, expressway, surface road, lane (loose — `LANE_MARKING` is more specific), thoroughfare, path
+- **Loose synonyms:** route (loose — route is a planned path through roads, see `EGO_TRAJECTORY`), driving surface
+- **Extraction rule:** Extract when the disclosure treats the road as a referent ("vehicles travelling on a road", "shape of the road", "approaching the road"). When the patent specifically discusses lane markings or intersections, prefer `LANE_MARKING` / `INTERSECTION` for those features.
+- **Disambiguation:** vs. `INTERSECTION` — intersections are points where roads meet; the road is the linear substrate. vs. `LANE_MARKING` — markings are painted features *on* the road.
+- **Attributes:** `class` (highway / urban / rural / private / parking_lot / unspecified), `lane_count`, `surface` (asphalt / concrete / gravel / dirt / unspecified)
+
+#### `LANE_MARKING`
+> Painted or otherwise demarcated lane boundary on the road surface — solid lines, dashed lines, lane-departure boundaries, stop bars, crosswalks (loose).
+
+- **Tight synonyms:** lane marking, lane line, road marking, painted line, lane boundary, lane stripe, dashed line, solid line, double yellow, white line, stop bar, lane departure boundary
+- **Loose synonyms:** marking, line, road paint, crosswalk (loose — sometimes its own thing), road sign (loose — different)
+- **Extraction rule:** Map painted / physical lane delineators. Distinguish from `TRAFFIC_SIGN` (vertical signage) and from `ROAD` (the substrate).
+- **Attributes:** `style` (solid / dashed / double / dotted / unspecified), `color` (white / yellow / red / blue / unspecified)
+
+#### `TRAFFIC_SIGN`
+> Roadside or overhead signage conveying static or quasi-static information — stop signs, yield signs, speed limit signs, route markers, regulatory and warning signs.
+
+- **Tight synonyms:** traffic sign, road sign, regulatory sign, warning sign, stop sign, yield sign, speed limit sign, route marker, guide sign, no-entry sign, do-not-enter sign, signage
+- **Loose synonyms:** sign (loose — could be any sign), road information
+- **Extraction rule:** Use for signs whose state is static (or changes only via maintenance). Distinguish from `TRAFFIC_LIGHT` (signal that cycles) and `LANE_MARKING` (painted lane delineators).
+- **Attributes:** `category` (regulatory / warning / guide / route / construction / other), `mounting` (post / overhead / portable_sign_board)
+
+#### `PARKING_SPACE`
+> A discrete parking position — single-vehicle or structural (multi-space lot or garage). Important for AV-summon, parking-management, and ride-hailing pickup/dropoff claims.
+
+- **Tight synonyms:** parking space, parking spot, parking stall, parking position, parking slot, parking bay, dropoff zone, pickup zone, loading zone, parking structure (loose — sometimes refers to whole facility), parking lot (loose — facility)
+- **Loose synonyms:** space, slot, position
+- **Extraction rule:** Use for individual parking positions and the immediate context (single bay, ADA bay). For the larger facility (whole lot, whole garage), capture as attribute or extract as a separate `PARKING_FACILITY` if v2 needs it. For now, fold facility into this type with `scope=facility` attribute.
+- **Attributes:** `scope` (individual_space / facility), `accessibility` (standard / ADA / EV_charging / motorcycle / other), `occupancy_state` (occupied / vacant / reserved / unknown)
+
+#### `HUMAN_OPERATOR`
+> A human in a non-driver role who interacts with the AV stack — fleet operations console operator, parking-lot operator, teleassist remote driver, ride-hailing dispatcher, safety supervisor.
+
+- **Tight synonyms:** operator, human operator, fleet operator, teleassist operator, remote operator, dispatcher, safety driver (when in supervisory role), monitor, supervisor, parking lot operator, fleet dispatcher, command center operator
+- **Loose synonyms:** user (loose — could mean rider or driver), agent (loose — could mean software agent or human)
+- **Extraction rule:** Use for humans whose role is non-driver and non-passenger. Distinguish from a literal driver in the vehicle (extracted as a relationship to `DRIVER_INTERFACE` rather than as a separate node) and from passengers / riders. Often appears as the recipient of an alert or the issuer of a remote command.
+- **Disambiguation:** vs. `DRIVER_INTERFACE` — that's the surface; this is the human. vs. ride-hailing rider — riders are extracted via `PASSENGER_MOBILE_DEVICE` or as occupants.
+- **Attributes:** `role` (fleet_dispatcher / teleassist / safety_supervisor / parking_operator / dispatcher / other), `location` (in_facility / remote / in_vehicle)
 
 ### 1.10 Software methods
 
@@ -372,11 +529,68 @@ Thirty canonical node types, grouped into eight categories. Pick the granularity
   | `OPTIMIZATION` | quadratic program, QP, mixed-integer, MILP, gradient descent, convex optimization |
   | `OTHER` | (anything not above — preserved with surface form for ontology evolution) |
 
+### 1.11 Energy & propulsion
+
+> Storage and conversion of energy for vehicle motion. Important for the EV / hybrid / fuel-cell intersection with AV — patents on AV-aware energy management, V2V/V2G charging, range-aware planning, and fault-tolerant power distribution all sit here.
+
+#### `ENERGY_STORAGE_DEVICE`
+> Generic parent for any device that stores energy for vehicle propulsion or onboard systems. Use when the patent says "energy storage" / "power source" generically; use a child type when the disclosure names the specific technology.
+
+- **Tight synonyms:** energy storage device, energy storage system, ESS, power source, energy source, electrical storage, power supply (loose; can be 12V auxiliary), onboard energy storage
+- **Loose synonyms:** storage, source
+- **Extraction rule:** Catch-all parent. Prefer a child type (`BATTERY`, `ULTRACAPACITOR`, `FUEL_CELL`) when the disclosure specifies.
+- **Attributes:** `nominal_voltage_v`, `usable_energy_kwh`, `cooling` (passive / liquid / refrigerant)
+
+#### `BATTERY`
+- **Parent type:** `ENERGY_STORAGE_DEVICE`
+> Electrochemical cell or pack storing electrical energy — the workhorse for EVs, hybrids, and 12V auxiliary systems.
+
+- **Tight synonyms:** battery, battery pack, traction battery, high-voltage battery, HV battery, lithium-ion battery, Li-ion pack, NCA pack, NMC pack, LFP battery, removable battery, swappable battery, 12V auxiliary battery, low-voltage battery
+- **Loose synonyms:** cell, pack, module (loose — overlaps with software module)
+- **Extraction rule:** Default to `BATTERY` for unspecified electrochemical storage. Capture chemistry, swappability, and voltage tier as attributes.
+- **Attributes:** `chemistry` (Li-ion / LFP / NMC / NCA / NiMH / lead_acid / solid_state / other), `voltage_tier` (HV / LV / 48V / unspecified), `swappable` (true / false / unspecified), `capacity_kwh`
+
+#### `ULTRACAPACITOR`
+- **Parent type:** `ENERGY_STORAGE_DEVICE`
+> Electrostatic / electrochemical capacitor for high-power, low-energy storage — typically paired with a battery for regen-braking burst absorption.
+
+- **Tight synonyms:** ultracapacitor, supercapacitor, EDLC, electric double-layer capacitor, capacitor (loose; usually means electronic component, not vehicle storage)
+- **Loose synonyms:** cap (loose), high-power storage
+- **Extraction rule:** Specifically for high-cycle, high-power storage paired with primary battery. Distinguish from generic electronic capacitor components.
+- **Attributes:** `capacitance_f`, `voltage_v`
+
+#### `FUEL_CELL`
+- **Parent type:** `ENERGY_STORAGE_DEVICE`
+> Hydrogen / methanol / other fuel-cell stack converting fuel to electricity onboard — primary propulsion energy source for FCEVs, sometimes range-extender for BEVs.
+
+- **Tight synonyms:** fuel cell, fuel cell stack, FC, hydrogen fuel cell, PEM fuel cell, PEMFC, SOFC, methanol fuel cell, range-extender fuel cell
+- **Loose synonyms:** stack (loose — could mean software stack)
+- **Extraction rule:** Map fuel-cell architectures here. Hydrogen tank may be a separate node if disclosed structurally; for v1 fold tank info into `fuel_storage` attribute.
+- **Attributes:** `fuel_type` (hydrogen / methanol / other), `output_kw`, `fuel_storage` (compressed_350bar / compressed_700bar / liquid / metal_hydride)
+
+#### `POWERTRAIN`
+> The propulsion system as a unified node — engine, electric machine(s), transmission, inverter, drivetrain components viewed together. Use when the patent treats propulsion structurally or makes claims about hybrid power-split, EV inverter control, or torque-distribution between machines.
+
+- **Tight synonyms:** powertrain, drivetrain, propulsion system, drive system, traction system, electric drive, hybrid powertrain, multi-mode powertrain, EV powertrain, ICE powertrain, fuel-cell powertrain, eAxle, e-axle
+- **Loose synonyms:** drive (loose — could be storage drive), motor (loose — see `THROTTLE_ACTUATOR`), engine (loose — only the ICE part)
+- **Extraction rule:** Use for the propulsion system as a structural element. Sub-components (engine, electric machine, inverter, transmission) become attributes or are referenced via `PART_OF` if the disclosure breaks them out.
+- **Disambiguation:** vs. `THROTTLE_ACTUATOR` — that's the *command interface*; powertrain is the *physical system*. vs. `ENERGY_STORAGE_DEVICE` — battery / fuel cell stores energy; powertrain converts and delivers it.
+- **Attributes:** `architecture` (ICE / hybrid_series / hybrid_parallel / hybrid_power_split / EV_single_motor / EV_dual_motor / EV_in-wheel / fuel_cell / unspecified), `electric_machine_count`, `transmission_type` (CVT / DCT / planetary / direct / unspecified)
+
+#### `CHARGING_STATION`
+> A discrete charging point for EVs — wired (level-1 / level-2 / DC fast) or wireless (inductive). Important for EV-AV intersection: fleet routing to chargers, AV self-summon for charging, V2G grid integration, robot recharging.
+
+- **Tight synonyms:** charging station, EV charger, EVSE, electric vehicle supply equipment, DC fast charger, level 2 charger, level 3 charger, supercharger, inductive charger, wireless charger, charge point, charging pile, charging interface, V2G charger
+- **Loose synonyms:** charger (loose — could mean phone charger), station (loose)
+- **Extraction rule:** Use for fixed (or robot-deployed) charging infrastructure that an EV connects to. Capture charge level and connector type when disclosed.
+- **Disambiguation:** vs. `BATTERY` — battery is what's being charged; station provides the energy. vs. `OFF_BOARD_SERVER` — sometimes a charger has a backend; extract both linked via `PART_OF`.
+- **Attributes:** `charge_level` (L1_AC / L2_AC / DC_fast / wireless / V2G), `connector` (J1772 / CCS / CHAdeMO / NACS / Type2 / wireless_pad / unspecified), `power_kw`
+
 ---
 
 ## 2. Edge / relation types
 
-Ten canonical relation types. Most carry a `content` (see §3) and a `frequency` (see §4); a few are structural and don't.
+Twelve canonical relation types. Most carry a `content` (see §3) and a `frequency` (see §4); a few are structural and don't.
 
 | Code | Description | Carries content? | Carries frequency? |
 |---|---|---|---|
@@ -385,6 +599,8 @@ Ten canonical relation types. Most carry a `content` (see §3) and a `frequency`
 | `FUSES_FROM` | Multi-source convergence into a fusion target | yes | yes |
 | `CONTROLS` | Issues actuator-level commands | yes | yes |
 | `MEASURES` | Sensor observes the physical environment | yes (modality) | yes |
+| `DETECTS` | Sensor / perception module identifies a specific entity in the environment | yes (entity type) | yes |
+| `ALERTS_TO` | Notifies a human (driver / occupant / operator) of a condition | yes (alert type) | yes |
 | `READS_FROM` / `WRITES_TO` | Persistent or buffered storage I/O | yes | yes |
 | `PUBLISHES` / `SUBSCRIBES_TO` | Pub/sub pattern (named topic) | yes | yes |
 | `AUTHENTICATES_WITH` | Security relationship for off-board comms | no | no |
@@ -411,8 +627,18 @@ For each, brief synonyms and rules:
 - **Rule:** Specifically for module → actuator command paths. Not for one module configuring another (that's `SENDS_TO` with content type `CONFIGURATION`).
 
 ### `MEASURES`
-- **Tight synonyms:** measures, observes, senses, captures, detects, scans, perceives
-- **Rule:** Sensor → environment relationship. Always emanates from a sensor node. Many patents leave this implicit ("the lidar scans the surroundings"); we still extract it because it lets the query graph express "I want a vehicle that measures with X modality."
+- **Tight synonyms:** measures, observes, senses, captures, scans, perceives, monitors
+- **Rule:** Sensor → environment relationship at the *raw signal* level. Always emanates from a sensor node. Use for the act of taking a reading; use `DETECTS` for the act of recognizing a specific entity from those readings.
+
+### `DETECTS`
+- **Tight synonyms:** detects, identifies, recognizes, classifies, locates, finds, perceives (loose), tracks (when output is a tracked entity)
+- **Loose synonyms:** sees, observes (loose — overlaps with MEASURES)
+- **Rule:** Source is a `RANGING_SENSOR`, `CAMERA`, `PERCEPTION_MODULE`, or `SENSOR_FUSION_MODULE`. Target is the *entity type* being detected (typically a `ROAD_OBSTACLE` family member, `NEARBY_VEHICLE`, `LANE_MARKING`, `TRAFFIC_LIGHT`, etc.). Distinct from `MEASURES` because the act is *recognition* of a specific class, not just signal acquisition. The content payload is typically `OBJECT_DETECTION_LIST` or `OBJECT_CLASSIFICATION`.
+
+### `ALERTS_TO`
+- **Tight synonyms:** alerts, warns, notifies, signals, informs, warns (the driver), provides notification, issues warning, provides alert, presents alert
+- **Loose synonyms:** outputs (loose — could be any output), displays (loose), tells (loose)
+- **Rule:** Source is typically a `PERCEPTION_MODULE`, `PLANNING_MODULE`, or `CONTROL_MODULE`. Target is a `DRIVER_INTERFACE`, `HUMAN_OPERATOR`, `DRIVER_MOBILE_DEVICE`, or `PASSENGER_MOBILE_DEVICE`. Distinct from generic `SENDS_TO` because the recipient is human, the payload is `ALERT_MESSAGE` or similar, and the implication is human action expected.
 
 ### `READS_FROM` / `WRITES_TO`
 - **Tight synonyms (read):** reads, retrieves, fetches, queries, loads, accesses
@@ -440,7 +666,7 @@ For each, brief synonyms and rules:
 
 ## 3. Content types
 
-What flows over an edge. Twelve canonical content types covering the core AV data classes.
+What flows over an edge. Twenty canonical content types covering the core AV data classes.
 
 | Code | Description | Typical sources | Typical targets |
 |---|---|---|---|
@@ -455,7 +681,14 @@ What flows over an edge. Twelve canonical content types covering the core AV dat
 | `MAP_TILE` | HD map data segment | `SERVER` (map role), `HD_MAP_DATA` | `PERCEPTION_MODULE`, `PLANNING_MODULE` |
 | `V2X_MESSAGE` | BSM, SPaT, MAP, PSM | `V2X_TRANSCEIVER` | `PERCEPTION_MODULE`, `PLANNING_MODULE` |
 | `VEHICLE_STATE` | Speed, gear, occupancy, dynamics | chassis sensors, `INERTIAL_SENSOR` | most compute nodes |
-| `CALIBRATION_DATA` | Sensor extrinsics / intrinsics | `OFF_BOARD_SERVER`, on-vehicle storage | `PERCEPTION_MODULE`, `SENSOR_FUSION_MODULE` |
+| `CALIBRATION_DATA` | Sensor extrinsics / intrinsics | `SERVER`, on-vehicle storage | `PERCEPTION_MODULE`, `SENSOR_FUSION_MODULE` |
+| `OBJECT_CLASSIFICATION` | Class label + confidence for a detected entity (pedestrian / vehicle / sign / etc.) | `PERCEPTION_MODULE` | `PLANNING_MODULE`, `PREDICTION_MODULE` |
+| `CONFIDENCE_SCORE` | Probability / confidence / quality value attached to any other content | most modules | most modules |
+| `ROAD_GEOMETRY` | Road shape, lane shape, curvature, slope | `PERCEPTION_MODULE`, `HD_MAP_DATA` | `PLANNING_MODULE`, `CONTROL_MODULE` |
+| `WEATHER_DATA` | Precipitation, visibility, surface condition, temperature | `SERVER`, on-vehicle sensors | `PLANNING_MODULE`, `PERCEPTION_MODULE` |
+| `DRIVER_STATE_DATA` | Gaze direction, drowsiness level, biometric signals, attention score | `DRIVER_STATE_SENSOR` | `PLANNING_MODULE`, `DRIVER_INTERFACE` |
+| `SERVICE_REQUEST` | Ride request, charging request, dispatch request, summon command | `MOBILE_DEVICE` family, `SERVER` | `SERVER`, `PLANNING_MODULE` |
+| `ALERT_MESSAGE` | Driver / operator notification payload (text, audio, haptic, visual cue) | `PERCEPTION_MODULE`, `PLANNING_MODULE`, `CONTROL_MODULE` | `DRIVER_INTERFACE`, `HUMAN_OPERATOR`, mobile device family |
 
 Each content type has its own synonym set. Examples for two:
 
