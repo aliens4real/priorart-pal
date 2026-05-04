@@ -35,6 +35,48 @@ We model this with an explicit `parent_type` field on each canonical code. The m
 
 Hierarchies in v1: `ACTUATOR` parent, `MOBILE_DEVICE` parent, `NEARBY_VEHICLE` parent, `ROAD_OBSTACLE` parent, `ENERGY_STORAGE_DEVICE` parent. More may emerge as the corpus grows.
 
+### On agency abstraction (the "vehicle transmits" problem)
+
+Patents routinely attribute functions to a higher-level structural element when the action is physically performed by an embedded sub-component:
+
+| What the claim says | What's really happening | Sub-component that does the work |
+|---|---|---|
+| "the vehicle transmits a message to a server" | comms via cellular / Wi-Fi | `TELEMATICS_CONTROLLER` |
+| "the vehicle communicates with a roadside unit" | DSRC / C-V2X PC5 sidelink | `V2X_TRANSCEIVER` |
+| "the vehicle detects an obstacle" | sensor + perception pipeline | `RANGING_SENSOR` + `PERCEPTION_MODULE` |
+| "the system determines a route" | planning compute | `PLANNING_MODULE` |
+| "the controller receives image data" | physical bus + buffer + driver | `IN_VEHICLE_NETWORK` + driver |
+| "the apparatus authenticates the user" | crypto + biometric pipeline | `ALGORITHM` (subtype) + `DRIVER_STATE_SENSOR` |
+
+The doctrine matters for examination: a claim element can be met by any component that performs the function, even if the claim attributes it to a different element ("the vehicle transmits" is anticipated by prior art with a transceiver doing the transmitting, because the transceiver is part of the vehicle).
+
+We model this with a **matcher rule rather than a separate edge type** — extraction stays faithful to claim language, the matcher does the substitution work:
+
+- **Container substitution** — if a patent has `VEHICLE --SENDS_TO--> X` and a query has `TELEMATICS_CONTROLLER --SENDS_TO--> X'`, the matcher considers them a partial match (flagged as `agency_substituted`) provided that:
+  - `TELEMATICS_CONTROLLER` is in the *typical-subsystems* list for `VEHICLE` (see attribute below)
+  - The edge type and target match (or are themselves substitutable)
+- **Reverse direction** — if a patent has `TELEMATICS_CONTROLLER --SENDS_TO--> X` and a query has `VEHICLE --SENDS_TO--> X'`, full match (the specific reads on the generic agent — same logic as `parent_type` BRI).
+- **Result UI** — every agency-substituted match is displayed with both the patent's surface attribution AND the actual sub-component, so the examiner can confirm the substitution is reasonable.
+
+To support this, the relevant high-level nodes carry a `typical_subsystems` attribute listing the canonical types they commonly stand in for. For `VEHICLE`:
+
+```
+typical_subsystems = [
+  TELEMATICS_CONTROLLER, V2X_TRANSCEIVER, IN_VEHICLE_NETWORK,
+  AV_COMPUTE_PLATFORM, DOMAIN_CONTROLLER, CHASSIS_CONTROLLER,
+  PERCEPTION_MODULE, SENSOR_FUSION_MODULE, PREDICTION_MODULE,
+  PLANNING_MODULE, CONTROL_MODULE, SAFETY_MONITOR,
+  RANGING_SENSOR, CAMERA, INERTIAL_SENSOR, POSITIONING_SENSOR,
+  DRIVER_STATE_SENSOR, STEERING_ACTUATOR, THROTTLE_ACTUATOR,
+  BRAKE_ACTUATOR, WHEEL, POWERTRAIN, ENERGY_STORAGE_DEVICE,
+  DRIVER_INTERFACE, DATA_LOGGER, DATABASE
+]
+```
+
+Other nodes with non-empty `typical_subsystems`: `NEARBY_VEHICLE` (mirrors `VEHICLE`), `GROUND_MOBILE_ROBOT`, `AERIAL_VEHICLE`, `AV_COMPUTE_PLATFORM` (typical-subsystems: `ALGORITHM` family), `DRIVER_INTERFACE` (`DRIVER_STATE_SENSOR` for monitoring functions).
+
+This is mechanical lookup, not LLM reasoning — keeps matcher behavior predictable and explainable to the examiner.
+
 Everything here is **v1 draft** — designed to be redlined. The expectation is iteration: ingest the seed corpus, see what doesn't fit, refine.
 
 ---
