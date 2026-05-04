@@ -4,6 +4,40 @@ Append-only log of decisions, gotchas, and costs. Newest at the top.
 
 ---
 
+## 2026-05-03 — Ontology must be runtime-editable
+
+**Decision:** Ontology is **first-class runtime state**, not a static spec. Examiner can add canonical types and edit synonyms without redeploy as new cases surface.
+
+**Why:** Real prior-art search constantly turns up novel surface forms and edge cases. If the ontology is locked at build time, the tool degrades over time as the domain evolves.
+
+### Storage
+
+- **Postgres tables** (introduced in Phase 2 schema):
+  - `canonical_types` — code, category, parent_type, description, extraction_rule, attributes JSONB, typical_subsystems, is_active
+  - `canonical_synonyms` — canonical_code, surface_form, tightness ('tight'/'loose'), is_active, source ('seed'/'examiner'/'corpus_mining')
+  - `ontology_changes` — append-only audit log of every mutation (who, what, when, before/after, reason)
+- `docs/ontology-v1.md` becomes the **seed** (initial population script) and a **periodic export** for documentation/portfolio purposes — not the runtime source of truth.
+
+### v1 vs v2 capability
+
+- **v1 (in scope):** Backend-complete admin endpoints (`POST/PATCH/DELETE /admin/ontology/...`), Cognito admin-group gated. Examiner can curl every endpoint or run `python scripts/sync_ontology.py` to bulk-edit.
+- **v2 (deferred):** Polished React `/admin/ontology` page — filterable list, per-type detail panel, synonym checkbox grid, diff viewer, "re-extract affected patents" button.
+
+### Versioning + re-extraction
+
+- Each patent's extracted graph stores `ontology_version_hash` (sha256 of relevant canonical-type definitions at extraction time).
+- When a canonical type or synonym changes, affected patents flagged stale.
+- v1 strategy: **lazy re-extraction** (next query touching the type re-extracts) plus an admin **"re-extract all stale" button**.
+- v2: background job that re-extracts in batches.
+
+### Phase 2 scope expansion
+
+Original Phase 2: data ingestion + first crude RAG.
+
+Updated Phase 2: database schema (incl. ontology tables) → ontology seed-load script → ingestion pipeline that respects ontology version → first crude RAG → admin endpoints for ontology CRUD. **+5–8 hours estimated.**
+
+---
+
 ## 2026-05-03 — Project bootstrapped
 
 **Decisions made**
