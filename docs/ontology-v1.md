@@ -55,7 +55,7 @@ A patent's extracted graph references entries from all five.
 
 ## 1. Node types
 
-Forty-nine canonical node types across nine categories. Several types form parent-child hierarchies (see "On `parent_type`" above). Pick the granularity carefully — too few and we collapse meaningful distinctions; too many and every patent looks unique.
+Fifty-five canonical node types across ten categories. Several types form parent-child hierarchies (see "On `parent_type`" above). Pick the granularity carefully — too few and we collapse meaningful distinctions; too many and every patent looks unique.
 
 ### 1.1 Sensors
 
@@ -151,16 +151,43 @@ Forty-nine canonical node types across nine categories. Several types form paren
 - **Disambiguation:** vs. `PLANNING_MODULE` — planner says where to go; controller says how to actuate. vs. actuator nodes — the controller computes commands; the actuator executes them.
 - **Attributes:** `axis` (lateral / longitudinal / both), `algorithm_family` (PID / MPC / NN / hybrid)
 
-### 1.3 Compute hardware
+#### `SAFETY_MONITOR`
+> Independent supervisory module that can detect unsafe states and override or constrain the primary autonomy stack. Often runs on a separate compute platform with its own sensing for ASIL-D / fail-operational architectures.
+
+- **Tight synonyms:** safety monitor, safety supervisor, safety controller, fail-operational supervisor, fallback supervisor, safety domain controller, redundant safety processor, watchdog, safety watchdog, runtime safety monitor, runtime assurance monitor, safety arbiter
+- **Loose synonyms:** monitor (loose — could mean log/metrics monitor), supervisor (loose — could mean a planner level)
+- **Extraction rule:** Use when the disclosure describes a structurally separate safety chain that runs in parallel with the primary perception/planning/control stack and can intervene. Common pattern: takes redundant sensor input, runs simplified checks, can issue an `OVERRIDES` edge to `PLANNING_MODULE` or `CONTROL_MODULE`.
+- **Disambiguation:** vs. `CONTROL_MODULE` — primary controller is part of the active control loop; safety monitor sits *outside* and intervenes only when needed. vs. `AV_COMPUTE_PLATFORM` — safety monitor often runs on its own platform but is itself a software role.
+- **Attributes:** `compute_separation` (same_box / separate_compute / lockstep_pair), `intervention_modes` (limit_acceleration / lateral_lock / minimum_risk_maneuver / emergency_brake / handoff_to_driver), `ASIL_level` (A / B / C / D / unspecified)
+
+#### `CHASSIS_CONTROLLER`
+> ECU running vehicle-dynamics control loops — anti-lock braking (ABS), electronic stability control (ESC), traction control (TCS), yaw-moment control. Distinct from `CONTROL_MODULE` because it operates at chassis-dynamics timescale (often >100 Hz) and its claim language is heavily yaw / slip / friction-coefficient terminology.
+
+- **Tight synonyms:** chassis controller, vehicle dynamics controller, VDC, electronic stability controller, ESC, ESP, electronic stability program, ABS controller, traction control system, TCS, yaw controller, yaw moment controller, integrated chassis control, ICC
+- **Loose synonyms:** stability controller, dynamics controller, brake controller (loose — overlaps with `BRAKE_ACTUATOR` interface)
+- **Extraction rule:** Use when the disclosure references stability / yaw / slip / lockup control as the function. Often interacts with `BRAKE_ACTUATOR` and `STEERING_ACTUATOR` to apply differential braking or steering corrections.
+- **Disambiguation:** vs. `CONTROL_MODULE` — that's AV-stack motion control (trajectory tracking); chassis controller is the lower-level dynamics stabilization. vs. `BRAKE_ACTUATOR` — actuator executes; chassis controller commands.
+- **Attributes:** `functions` (subset of: ABS / ESC / TCS / yaw_control / rollover_mitigation / brake_assist), `update_rate_hz`
+
+### 1.3 Compute platforms
 
 #### `AV_COMPUTE_PLATFORM`
 > The physical compute hardware running perception / planning / control software.
 
-- **Tight synonyms:** AV computer, autonomous driving computer, central compute platform, domain controller, ADAS ECU, AI compute platform, in-vehicle compute, FSD computer, NVIDIA DRIVE platform, Tesla FSD chip, Mobileye EyeQ
+- **Tight synonyms:** AV computer, autonomous driving computer, central compute platform, AI compute platform, in-vehicle compute, FSD computer, NVIDIA DRIVE platform, Tesla FSD chip, Mobileye EyeQ
 - **Loose synonyms:** compute unit, processing platform, on-board computer, ECU, electronic control unit
 - **Extraction rule:** Hardware, not software. Capture only when the patent specifically describes the compute platform as a structural element (chip, board, redundant pair). Generic mentions of "a processor" do not warrant a node — only when the disclosure cares about the hardware as such (redundancy, AI accelerators, automotive-grade certification, etc.).
-- **Disambiguation:** vs. functional compute modules — those are software roles; this is the box they run on. vs. `TELEMATICS_CONTROLLER` — telematics is a comms gateway, not the AV brain.
+- **Disambiguation:** vs. functional compute modules — those are software roles; this is the box they run on. vs. `DOMAIN_CONTROLLER` — domain controllers are domain-specific (chassis / ADAS / body / infotainment); the AV compute platform is the central autonomy brain. vs. `TELEMATICS_CONTROLLER` — telematics is a comms gateway, not the AV brain.
 - **Attributes:** `redundancy` (single / dual / triple), `accelerator_type` (CPU / GPU / NPU / FPGA / ASIC), `certification` (ASIL-D / ASIL-B / etc.)
+
+#### `DOMAIN_CONTROLLER`
+> A consolidated ECU serving an entire functional domain — ADAS, chassis, body, infotainment, powertrain. Modern E/E architectures replace dozens of small ECUs with a few domain controllers, optionally further consolidated into zonal controllers (one per physical region of the vehicle).
+
+- **Tight synonyms:** domain controller, ADAS domain controller, chassis domain controller, body domain controller, infotainment domain controller, powertrain domain controller, vehicle integration ECU, vehicle integration unit, VIU, zonal controller, zonal gateway, zone ECU, central gateway, central computer
+- **Loose synonyms:** ECU (loose — covers any electronic control unit), gateway (loose — overlaps with telematics/network gateway)
+- **Extraction rule:** Use when the disclosure references domain consolidation explicitly (one ECU serving multiple functions in a domain) or zonal architecture. Capture which domain via attribute.
+- **Disambiguation:** vs. `AV_COMPUTE_PLATFORM` — the AV brain runs the autonomy stack itself. The ADAS domain controller may *be* the AV compute platform in some architectures, may be a separate front-end in others. vs. `TELEMATICS_CONTROLLER` — telematics is comms-specific; gateway/zonal controllers may host the telematics function as one role among several.
+- **Attributes:** `domain` (ADAS / chassis / body / infotainment / powertrain / cockpit / safety / multi), `architecture_pattern` (centralized / domain / zonal / hybrid), `redundancy`
 
 ### 1.4 Actuators
 
@@ -198,7 +225,25 @@ Forty-nine canonical node types across nine categories. Several types form paren
 - **Loose synonyms:** braking system, deceleration actuator
 - **Attributes:** `architecture` (hydraulic / electric / regenerative / blended)
 
-### 1.5 Off-board comms
+#### `WHEEL`
+> The road wheel + tire as a structural element of the vehicle. Patents reference it constantly in chassis-dynamics, traction-control, lane-departure-yaw-moment, and tire-pressure-monitoring claims. We collapse wheel and tire into one canonical type because patent claim language conflates them ("turning inside wheel", "tire pressure", "wheel slip"); the matcher uses the synonyms to recognize either form.
+
+- **Tight synonyms:** wheel, tire, tyre, road wheel, drive wheel, driven wheel, front wheel, rear wheel, left wheel, right wheel, turning inside wheel, turning outside wheel, vehicle wheel, wheel hub assembly
+- **Loose synonyms:** rolling element, contact patch (loose — strictly the tire-road interface)
+- **Extraction rule:** Use whenever the disclosure references wheels or tires as physical elements being controlled, monitored, or dimensioned. If the patent specifies which wheel (front-left, turning-inside, etc.), capture as attribute. Multi-wheel claims usually warrant one `WHEEL` node with `count=4` rather than four separate nodes — unless the disclosure treats individual wheels as distinct (independent torque vectoring, in-wheel motors).
+- **Disambiguation:** vs. `STEERING_ACTUATOR` — actuator is what turns the wheel; the wheel itself is a separate structural element. vs. `BRAKE_ACTUATOR` — same idea: actuator applies force, wheel rotates.
+- **Attributes:** `position` (front_left / front_right / rear_left / rear_right / front_axle / rear_axle / all / unspecified), `count`, `has_in_wheel_motor` (true / false / unspecified), `has_pressure_sensor` (true / false / unspecified)
+
+### 1.5 Communications
+
+#### `IN_VEHICLE_NETWORK`
+> The bus / network that connects ECUs and components inside the vehicle — CAN, CAN-FD, FlexRay, LIN, MOST, automotive Ethernet, time-sensitive networking. Captured as a node when the patent's claim involves the network topology, redundancy, or specific bus protocol as part of the inventive concept.
+
+- **Tight synonyms:** in-vehicle network, vehicle network, CAN bus, CAN-FD, FlexRay, LIN bus, MOST bus, automotive Ethernet, TSN, time-sensitive networking, in-vehicle Ethernet, IVN, vehicle backbone, automotive backbone, ring network (when in-vehicle), star topology, redundant bus, gateway bus
+- **Loose synonyms:** bus (loose), network (loose), wired link (loose — could be intra- or inter-component)
+- **Extraction rule:** Extract when the disclosure references the network as an inventive structural element (specific protocol, topology, redundancy scheme, gateway pattern, mixed-criticality scheduling). Generic mentions of "wired connection" or "communication path" without protocol detail don't warrant a node — those are implicit in `SENDS_TO` edges.
+- **Disambiguation:** vs. `TELEMATICS_CONTROLLER` — telematics is the off-board-comms gateway; in-vehicle network is the on-vehicle bus it bridges to. vs. `V2X_TRANSCEIVER` — V2X is short-range RF; in-vehicle network is wired/optical inside the vehicle.
+- **Attributes:** `protocol` (CAN / CAN-FD / FlexRay / LIN / MOST / automotive_Ethernet / TSN / proprietary / multi), `topology` (bus / star / ring / hybrid), `redundancy` (single / dual / triple), `safety_critical` (true / false / unspecified)
 
 #### `TELEMATICS_CONTROLLER`
 > On-vehicle gateway bridging in-cabin / chassis networks to off-board cellular / cloud services.
@@ -240,6 +285,15 @@ Forty-nine canonical node types across nine categories. Several types form paren
 - **Attributes:** `function` (display / input / monitoring / multi)
 
 ### 1.8 Data sources / persistence
+
+#### `DATA_LOGGER`
+> Onboard storage of vehicle / sensor / event data for post-incident reconstruction, regulatory compliance, ML training, and operational telemetry. The "EDR" (event data recorder) and "drive recorder" pattern, with growing scope for AV-specific DSSAD (data storage system for automated driving) requirements.
+
+- **Tight synonyms:** data logger, event data recorder, EDR, drive recorder, AV black box, autonomous vehicle data recorder, DSSAD, data storage system for automated driving, telemetry logger, sensor data logger, blackbox
+- **Loose synonyms:** logger (loose — could mean software logger), recorder (loose), storage device (loose)
+- **Extraction rule:** Use when the disclosure references onboard logging of vehicle dynamics, sensor data, or events for post-event analysis — distinct from operational `DATABASE` use. EDR-specific patents (regulatory or self-imposed) almost always warrant this node.
+- **Disambiguation:** vs. `DATABASE` — database is structured live data; data logger is append-only event/telemetry capture, often with strict retention and tamper-resistance requirements. vs. `MEMORY` (not a canonical type) — refers to a structural recording subsystem, not generic memory.
+- **Attributes:** `data_classes` (vehicle_dynamics / sensor_raw / sensor_processed / control_commands / event_snapshots / video / audio / multi), `retention_policy` (rolling_buffer / event_triggered / continuous / regulatory_minimum), `tamper_resistance` (true / false / unspecified), `regulatory_mode` (DSSAD / EDR / fleet_telemetry / unspecified)
 
 #### `DATABASE`
 > A structured data store — on-vehicle (e.g., HD-map cache, telemetry log, audit trail) or off-board (fleet operations DB, ride-history DB, ML feature store). Distinct from `SERVER` (which *hosts* databases) and from `HD_MAP_DATA` (which is one specific kind of stored content).
@@ -590,7 +644,7 @@ Forty-nine canonical node types across nine categories. Several types form paren
 
 ## 2. Edge / relation types
 
-Twelve canonical relation types. Most carry a `content` (see §3) and a `frequency` (see §4); a few are structural and don't.
+Fourteen canonical relation types. Most carry a `content` (see §3) and a `frequency` (see §4); a few are structural and don't.
 
 | Code | Description | Carries content? | Carries frequency? |
 |---|---|---|---|
@@ -600,7 +654,9 @@ Twelve canonical relation types. Most carry a `content` (see §3) and a `frequen
 | `CONTROLS` | Issues actuator-level commands | yes | yes |
 | `MEASURES` | Sensor observes the physical environment | yes (modality) | yes |
 | `DETECTS` | Sensor / perception module identifies a specific entity in the environment | yes (entity type) | yes |
+| `CLASSIFIES` | Assigns a class label / category to a detected entity or scenario | yes (classification scheme) | yes |
 | `ALERTS_TO` | Notifies a human (driver / occupant / operator) of a condition | yes (alert type) | yes |
+| `OVERRIDES` | Supervisory module preempts the primary control or planning loop | yes (override scope) | yes |
 | `READS_FROM` / `WRITES_TO` | Persistent or buffered storage I/O | yes | yes |
 | `PUBLISHES` / `SUBSCRIBES_TO` | Pub/sub pattern (named topic) | yes | yes |
 | `AUTHENTICATES_WITH` | Security relationship for off-board comms | no | no |
@@ -635,10 +691,20 @@ For each, brief synonyms and rules:
 - **Loose synonyms:** sees, observes (loose — overlaps with MEASURES)
 - **Rule:** Source is a `RANGING_SENSOR`, `CAMERA`, `PERCEPTION_MODULE`, or `SENSOR_FUSION_MODULE`. Target is the *entity type* being detected (typically a `ROAD_OBSTACLE` family member, `NEARBY_VEHICLE`, `LANE_MARKING`, `TRAFFIC_LIGHT`, etc.). Distinct from `MEASURES` because the act is *recognition* of a specific class, not just signal acquisition. The content payload is typically `OBJECT_DETECTION_LIST` or `OBJECT_CLASSIFICATION`.
 
+### `CLASSIFIES`
+- **Tight synonyms:** classifies, categorizes, labels, assigns class, identifies as, recognizes as, types as, marks as
+- **Loose synonyms:** identifies (loose — overlaps with DETECTS), recognizes (loose)
+- **Rule:** Source is typically a `PERCEPTION_MODULE`, `SENSOR_FUSION_MODULE`, or `ALGORITHM` node (NN classifier). Target is the *entity being classified* (often a `ROAD_OBSTACLE` or sub-type, `NEARBY_VEHICLE`, scenario, image region). Frequently appears alongside `DETECTS` — detection finds it, classification labels it. Use the more specific edge when the disclosure separates the two stages.
+
 ### `ALERTS_TO`
 - **Tight synonyms:** alerts, warns, notifies, signals, informs, warns (the driver), provides notification, issues warning, provides alert, presents alert
 - **Loose synonyms:** outputs (loose — could be any output), displays (loose), tells (loose)
 - **Rule:** Source is typically a `PERCEPTION_MODULE`, `PLANNING_MODULE`, or `CONTROL_MODULE`. Target is a `DRIVER_INTERFACE`, `HUMAN_OPERATOR`, `DRIVER_MOBILE_DEVICE`, or `PASSENGER_MOBILE_DEVICE`. Distinct from generic `SENDS_TO` because the recipient is human, the payload is `ALERT_MESSAGE` or similar, and the implication is human action expected.
+
+### `OVERRIDES`
+- **Tight synonyms:** overrides, preempts, supersedes, intervenes, takes over, vetoes, interrupts, inhibits, prohibits, prevents, disables, suppresses, takes priority over
+- **Loose synonyms:** controls (loose — overlaps with `CONTROLS`)
+- **Rule:** Almost always sourced from `SAFETY_MONITOR`, `CHASSIS_CONTROLLER`, or another supervisory layer; targets the primary `PLANNING_MODULE` or `CONTROL_MODULE`. Captures the structural pattern of an independent safety chain that can preempt the autonomy stack — distinct from `CONTROLS` because the target is itself a controller, not an actuator. Content payload often `OVERRIDE_COMMAND` (a constraint or replacement command).
 
 ### `READS_FROM` / `WRITES_TO`
 - **Tight synonyms (read):** reads, retrieves, fetches, queries, loads, accesses
