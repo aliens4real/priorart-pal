@@ -37,3 +37,6 @@ Append-only log of decisions, gotchas, and costs. Newest at the top.
 - Run `cdk bootstrap` after credentials are set (requires "yes, deploy")
 - Sign up for Cohere + Voyage AI accounts
 - Decide CPC subclass list for patent corpus (Phase 2)
+- Add `.github/workflows/ci.yml` via GitHub web UI (gh CLI OAuth lacks
+  `workflow` scope; refresh attempt didn't take. File exists locally,
+  ready to paste into the GitHub Actions UI when convenient.)
