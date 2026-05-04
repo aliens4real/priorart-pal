@@ -14,7 +14,7 @@ jobs:
         working-directory: api
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
         with:
           version: "0.11.8"
       - name: Set up Python
@@ -36,7 +36,7 @@ jobs:
         working-directory: infra
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
         with:
           version: "0.11.8"
       - uses: actions/setup-node@v4
