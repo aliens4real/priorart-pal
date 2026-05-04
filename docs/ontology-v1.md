@@ -41,7 +41,7 @@ A patent's extracted graph references entries from all five.
 
 ## 1. Node types
 
-Eighteen canonical node types, grouped into six categories. Pick the granularity carefully — too few and we collapse meaningful distinctions; too many and every patent looks unique.
+Twenty-six canonical node types, grouped into eight categories. Pick the granularity carefully — too few and we collapse meaningful distinctions; too many and every patent looks unique.
 
 ### 1.1 Sensors
 
@@ -184,16 +184,16 @@ Eighteen canonical node types, grouped into six categories. Pick the granularity
 - **Disambiguation:** vs. `TELEMATICS_CONTROLLER` — telematics is cellular long-range; V2X is short-range peer/infra. They often coexist in the same patent.
 - **Attributes:** `radio_technology` (DSRC / C-V2X / hybrid), `message_set_supported` (BSM / SPaT / MAP / PSM)
 
-### 1.6 Off-board / cloud
+### 1.6 Servers / off-board services
 
-#### `OFF_BOARD_SERVER`
-> Remote compute resource — fleet ops, HD-map server, OTA backend, ML training infrastructure, cloud teleassist.
+#### `SERVER`
+> Compute resource not tied to the ego vehicle's autonomy stack — fleet ops, HD-map service, OTA backend, ML training infrastructure, cloud teleassist, roadside edge compute, third-party data provider.
 
-- **Tight synonyms:** cloud server, backend server, fleet management server, HD map server, teleoperations server, remote operator center, OTA server, cloud platform, edge server (when remote, not vehicle-mounted)
-- **Loose synonyms:** server, remote compute, cloud, backend, off-board system, ground station
-- **Extraction rule:** Anything not in the vehicle that provides a service the vehicle consumes or that ingests vehicle data. Capture the **role** (`map_server` / `fleet_ops` / `ota` / `teleassist`) as an attribute since one server can play multiple roles.
-- **Disambiguation:** vs. `AV_COMPUTE_PLATFORM` — that's in-vehicle; this is off-board. The literal word "edge" is ambiguous — clarify by checking whether it's in-vehicle (compute platform) or roadside/cloud (off-board server).
-- **Attributes:** `roles` (list), `connection_to_vehicle` (cellular / V2X / wifi)
+- **Tight synonyms:** server, backend server, cloud server, fleet management server, HD map server, teleoperations server, remote operator center, OTA server, cloud platform, edge server (when roadside, not in-vehicle), data center, microservice
+- **Loose synonyms:** remote compute, backend, off-board system, ground station, cloud, web service, hosting infrastructure
+- **Extraction rule:** Anything that is **not the ego vehicle's own compute** but provides a service the vehicle consumes or that ingests vehicle data. Capture the **role(s)** (`map_server` / `fleet_ops` / `ota` / `teleassist` / `analytics` / `key_management` / `data_broker`) as an attribute since one server can play several. Capture **location** (`cloud` / `roadside_edge` / `private_data_center` / `peer_vehicle_compute`).
+- **Disambiguation:** vs. `AV_COMPUTE_PLATFORM` — that's in-vehicle; this is anywhere else. vs. `MOBILE_DEVICE` — a smartphone running an app is a `MOBILE_DEVICE`, not a server, even if it exposes a network endpoint. The literal word "edge" is ambiguous — verify by checking whether the disclosure means in-vehicle compute (→ `AV_COMPUTE_PLATFORM`) or roadside/cloud (→ `SERVER`).
+- **Attributes:** `roles` (list), `location` (cloud / roadside_edge / private_data_center / peer_vehicle_compute), `connection_to_vehicle` (cellular / V2X / wifi / wired)
 
 ### 1.7 HMI
 
@@ -213,8 +213,100 @@ Eighteen canonical node types, grouped into six categories. Pick the granularity
 - **Tight synonyms:** HD map, high-definition map, lane-level map, semantic map, map tile, map data store, prior map, vector map, base map, lanelet map
 - **Loose synonyms:** map, navigation map (loose because nav maps are typically lower fidelity)
 - **Extraction rule:** Map data is a node when the disclosure treats it as a structural input (stored on-vehicle, fetched from `OFF_BOARD_SERVER`, indexed by location). Generic statements like "the vehicle has GPS navigation" do not warrant a node.
-- **Disambiguation:** vs. `OFF_BOARD_SERVER` with `roles=[map_server]` — the *server* is one node, the *data* delivered is another. They link via `READS_FROM`.
+- **Disambiguation:** vs. `SERVER` with `roles=[map_server]` — the *server* is one node, the *data* delivered is another. They link via `READS_FROM`.
 - **Attributes:** `format` (lanelet / OpenDRIVE / proprietary), `update_method` (static / OTA / streaming)
+
+### 1.9 Environmental entities
+
+> Things in the world the ego vehicle perceives, predicts, communicates with, or navigates around. These are *not* components of the ego vehicle — they are the surrounding context. They show up as referents in claims constantly ("a sensor that detects a preceding vehicle", "the system communicates with a roadside traffic light").
+>
+> Six canonical types defined here. **Likely additions** I expect you'll want — flag yes/no on each: `PEDESTRIAN`, `CYCLIST`, `TRAFFIC_SIGN`, `ROAD_OBSTACLE`, `LANE_MARKING`. Adding any of those follows the same pattern as the six below.
+
+#### `VEHICLE`
+> The ego vehicle itself, treated as a structural element when the disclosure cares about its physical form (sedan / SUV / truck / motorcycle / bus), powertrain (ICE / hybrid / EV / fuel-cell), or the fact that components are mounted on / integrated with it.
+
+- **Tight synonyms:** vehicle, ego vehicle, host vehicle, subject vehicle, the vehicle, automobile, car, passenger car, autonomous vehicle, self-driving vehicle, AV, automated vehicle, host car
+- **Loose synonyms:** unit, platform, machine, transport
+- **Extraction rule:** Almost every patent has this implicitly. Extract a `VEHICLE` node when the disclosure makes a claim about *what kind* of vehicle, *what's mounted on it*, or *its physical configuration*. If the patent only describes computational/software elements with no physical claim about the vehicle itself, the `VEHICLE` node may be omitted to keep graphs sparse.
+- **Disambiguation:** vs. `NEARBY_VEHICLE` — `VEHICLE` is *the ego vehicle*; `NEARBY_VEHICLE` is anyone else.
+- **Attributes:** `body_type` (sedan / SUV / truck / motorcycle / bus / shuttle / robotaxi), `powertrain` (ICE / hybrid / EV / fuel_cell), `automation_level` (SAE 0–5)
+
+#### `NEARBY_VEHICLE`
+> Another vehicle sharing the road — perceived by the ego vehicle's sensors, predicted by the prediction module, and/or communicated with via V2X.
+
+- **Tight synonyms:** nearby vehicle, surrounding vehicle, other vehicle, remote vehicle, target vehicle, neighboring vehicle, adjacent vehicle, oncoming vehicle, cross-traffic vehicle, following vehicle, traffic participant (when it's a vehicle), road agent (when it's a vehicle)
+- **Loose synonyms:** traffic, agent, road user, dynamic obstacle (loose because pedestrians/cyclists also fit)
+- **Extraction rule:** Any disclosed vehicle that is *not* the ego vehicle. Capture the relative position via attribute when the patent specifies it. If the patent specifically calls out the *preceding* vehicle, prefer `PRECEDING_VEHICLE` for the additional matching specificity.
+- **Disambiguation:** vs. `PRECEDING_VEHICLE` — preceding is a strict specialization. vs. `VEHICLE` — that's ego only.
+- **Attributes:** `relative_position` (preceding / following / adjacent_left / adjacent_right / oncoming / cross_traffic / unspecified), `count` (single / multiple / fleet)
+
+#### `PRECEDING_VEHICLE`
+> The vehicle directly ahead of the ego vehicle in the same lane. Distinct canonical type because it is *the* central referent in adaptive cruise control, lane following, automated platooning, and rear-end collision avoidance claims.
+
+- **Tight synonyms:** preceding vehicle, lead vehicle, leading vehicle, vehicle ahead, vehicle in front, front vehicle, forward vehicle, target vehicle (in ACC/CACC context)
+- **Loose synonyms:** the other vehicle (loose — context-dependent), platoon leader (loose — only fits when platoon disclosed)
+- **Extraction rule:** Use when the disclosure specifically references the vehicle directly ahead, especially in claims about following distance, time-headway, ACC, CACC, or collision warning. If the patent mentions *both* preceding and other surrounding vehicles, extract both `PRECEDING_VEHICLE` and one or more `NEARBY_VEHICLE` nodes.
+- **Disambiguation:** vs. `NEARBY_VEHICLE` — preceding is the strict specialization (directly ahead, same lane). When in doubt, use `NEARBY_VEHICLE` with `relative_position=preceding`.
+- **Attributes:** `same_lane` (true / false / unspecified), `following_distance_m`, `time_headway_s`
+
+#### `TRAFFIC_LIGHT`
+> Roadside signal device controlling vehicle right-of-way at intersections or other regulated points. Both perceived (by camera + perception) and potentially communicated with (via V2I / SPaT).
+
+- **Tight synonyms:** traffic light, traffic signal, signal, signal light, stoplight, traffic control device, signal head
+- **Loose synonyms:** light (loose — could mean headlight, brake light), signal (loose — could mean turn signal)
+- **Extraction rule:** Disclosed roadside signal whose state controls vehicle motion. If the patent describes V2I exchange of signal phase / timing (SPaT messages), additionally link the `TRAFFIC_LIGHT` to a `SERVER` (with `roles=[v2i_provider]`) or to a roadside `V2X_TRANSCEIVER`.
+- **Disambiguation:** vs. `TRAFFIC_SIGN` (separate type if added) — signs are static; signals change state.
+- **Attributes:** `phases` (red/yellow/green / pedestrian / left-turn arrow / etc.), `controllable_by_v2i` (true / false / unspecified)
+
+#### `INTERSECTION`
+> A topological road feature where two or more roads cross or merge — explicitly referenced when the claim is about intersection-management, unprotected-turn, traffic-light interaction, four-way-stop reasoning, or roundabout navigation.
+
+- **Tight synonyms:** intersection, junction, crossroads, four-way stop, T-intersection, roundabout, traffic circle, signalized intersection, unsignalized intersection, merge point, on-ramp merge, off-ramp diverge
+- **Loose synonyms:** road junction, crossing
+- **Extraction rule:** Extract when the disclosure treats the intersection as a *thing the vehicle reasons about* — not just where the vehicle happens to be. Often appears in conjunction with `TRAFFIC_LIGHT`, `MAP_TILE`, and `PLANNING_MODULE`.
+- **Disambiguation:** vs. `MAP_TILE` — map data describes the intersection; the intersection itself is a separate node when the disclosure reasons about it directly.
+- **Attributes:** `geometry_type` (4-way / T / roundabout / merge / diverge / unspecified), `signalized` (true / false / unspecified), `lane_count_in/out`
+
+#### `MOBILE_DEVICE`
+> A user-carried smartphone, tablet, or wearable that interacts with the AV stack — for ride-hailing dispatch, remote summon, key-as-a-phone, infotainment pairing, ride-sharing UX, or driver/rider authentication.
+
+- **Tight synonyms:** mobile device, smartphone, phone, smart phone, mobile phone, tablet, smartwatch, wearable, user device, rider device, passenger device, fleet rider app device
+- **Loose synonyms:** device (loose — could mean any onboard device), terminal
+- **Extraction rule:** Extract when the disclosure specifically references a user-carried device interacting with the AV stack (typically over cellular or BLE). The *app* on the device is captured as an attribute, not a separate node.
+- **Disambiguation:** vs. `SERVER` — phones aren't servers even when they expose APIs. vs. `DRIVER_INTERFACE` — that's the in-cabin UI; mobile devices are user-carried.
+- **Attributes:** `role` (rider_app / fleet_app / digital_key / remote_summon / passenger_infotainment), `connection_to_vehicle` (cellular / BLE / NFC / wifi)
+
+### 1.10 Software methods
+
+#### `ALGORITHM`
+> A specific computational method the patent claims as inventive on its own — distinct from the module that runs it. Use when the disclosure makes the *algorithm itself* a structural element of the claim, not merely a generic implementation detail.
+
+- **Tight synonyms:** algorithm, method, technique, procedure, process, computational method, machine learning model, neural network, deep learning model, classifier, regressor, policy, optimizer
+- **Loose synonyms:** approach, scheme, mechanism, logic, function (loose — could mean a software function or a mathematical function)
+- **Extraction rule:** Extract an `ALGORITHM` node when the patent specifically claims an algorithmic technique (e.g., "a Kalman filter algorithm for fusing", "a neural network trained to detect"). Link it to the compute module that runs it via `PART_OF`. If the disclosure only mentions algorithms generically as implementation detail of a module, capture the algorithm family as an attribute on the module instead and skip the `ALGORITHM` node.
+- **Disambiguation:** vs. functional compute modules — modules are roles; algorithms are the methods inside them. A `PERCEPTION_MODULE` *uses* one or more `ALGORITHM`s. vs. `AV_COMPUTE_PLATFORM` — that's hardware; algorithm is software-only.
+- **Attributes:**
+  - `family` (one of the canonical sub-types below, or `OTHER`)
+  - `purpose` (perception / fusion / prediction / planning / control / localization / classification / other)
+  - `training_data_required` (true / false / unspecified)
+- **Canonical algorithm sub-types** (the value of `family`):
+
+  | Sub-type | Tight synonyms |
+  |---|---|
+  | `KALMAN_FILTER` | Kalman filter, KF, EKF, UKF, extended Kalman filter, unscented Kalman filter, linear Kalman filter |
+  | `PARTICLE_FILTER` | particle filter, sequential Monte Carlo, SMC, bootstrap filter |
+  | `NN_INFERENCE` | neural network, deep learning model, CNN, convolutional neural network, RNN, LSTM, transformer, attention model, deep neural network |
+  | `GRAPH_SEARCH` | A*, Dijkstra, graph search, shortest path, breadth-first, depth-first |
+  | `SAMPLING_PLANNER` | RRT, RRT*, PRM, sampling-based planner, rapidly-exploring random tree |
+  | `MPC` | model predictive control, MPC, receding-horizon control, optimal control |
+  | `PID_CONTROL` | PID, proportional-integral-derivative, PI controller, P controller |
+  | `HMM` | hidden Markov model, HMM, Markov chain |
+  | `BAYESIAN_INFERENCE` | Bayesian inference, Bayesian filter, posterior estimation, MAP estimation |
+  | `RL_POLICY` | reinforcement learning policy, RL agent, learned policy, Q-learning, actor-critic, PPO, SAC |
+  | `BEHAVIOR_CLONING` | behavior cloning, imitation learning, learning from demonstration |
+  | `HEURISTIC_RULESET` | rule-based, finite state machine, FSM, decision tree, expert system |
+  | `OPTIMIZATION` | quadratic program, QP, mixed-integer, MILP, gradient descent, convex optimization |
+  | `OTHER` | (anything not above — preserved with surface form for ontology evolution) |
 
 ---
 
@@ -295,8 +387,8 @@ What flows over an edge. Twelve canonical content types covering the core AV dat
 | `PREDICTED_TRAJECTORY` | Future motion of other agents | `PREDICTION_MODULE` | `PLANNING_MODULE` |
 | `EGO_TRAJECTORY` | Planned ego path | `PLANNING_MODULE` | `CONTROL_MODULE` |
 | `CONTROL_COMMAND` | Steering angle, accel, brake setpoints | `CONTROL_MODULE` | actuator nodes |
-| `POSITION_FIX` | Lat/lon, heading, velocity | `POSITIONING_SENSOR`, `PERCEPTION_MODULE` (loc role) | `PLANNING_MODULE`, `OFF_BOARD_SERVER` |
-| `MAP_TILE` | HD map data segment | `OFF_BOARD_SERVER` (map role), `HD_MAP_DATA` | `PERCEPTION_MODULE`, `PLANNING_MODULE` |
+| `POSITION_FIX` | Lat/lon, heading, velocity | `POSITIONING_SENSOR`, `PERCEPTION_MODULE` (loc role) | `PLANNING_MODULE`, `SERVER` |
+| `MAP_TILE` | HD map data segment | `SERVER` (map role), `HD_MAP_DATA` | `PERCEPTION_MODULE`, `PLANNING_MODULE` |
 | `V2X_MESSAGE` | BSM, SPaT, MAP, PSM | `V2X_TRANSCEIVER` | `PERCEPTION_MODULE`, `PLANNING_MODULE` |
 | `VEHICLE_STATE` | Speed, gear, occupancy, dynamics | chassis sensors, `INERTIAL_SENSOR` | most compute nodes |
 | `CALIBRATION_DATA` | Sensor extrinsics / intrinsics | `OFF_BOARD_SERVER`, on-vehicle storage | `PERCEPTION_MODULE`, `SENSOR_FUSION_MODULE` |
