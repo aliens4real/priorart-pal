@@ -1,7 +1,7 @@
 # Multi-stage build keeps the final image small.
 # Stage 1 builds the wheel; stage 2 runs it.
 
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 # uv installed as a static binary — no Python dependency conflicts
 COPY --from=ghcr.io/astral-sh/uv:0.11.8 /uv /usr/local/bin/uv
@@ -16,7 +16,7 @@ RUN uv venv /opt/venv \
  && uv pip install --no-deps . \
  && rm -rf /root/.cache /tmp/uv
 
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
