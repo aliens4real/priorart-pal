@@ -1,9 +1,10 @@
-"""CloudWatch dashboard + billing alarm references.
+"""Per-service CloudWatch dashboard.
 
-Pattern note: The actual billing alarms (at $20 and $50) are set up in the
-AWS console at the account level — they're easier to manage there. This
-stack creates a per-service dashboard that surfaces request count, latency,
-errors, and links to the alarm pages.
+Surfaces request count / latency / error metrics for the API Gateway
+and (later) App Runner / RDS. Account-wide billing alarms live in
+[`billing_alarms_stack.py`](billing_alarms_stack.py) — separate stack
+so they can deploy on a fresh account without depending on any service
+yet existing.
 """
 from __future__ import annotations
 

@@ -12,6 +12,7 @@ import aws_cdk as cdk
 from stacks.api_gateway_stack import ApiGatewayStack
 from stacks.app_runner_stack import AppRunnerStack
 from stacks.auth_stack import AuthStack
+from stacks.billing_alarms_stack import BillingAlarmsStack
 from stacks.database_stack import DatabaseStack
 from stacks.frontend_stack import FrontendStack
 from stacks.monitoring_stack import MonitoringStack
@@ -76,6 +77,17 @@ api_gateway = ApiGatewayStack(
     app_runner_url=app_runner.service_url,
 )
 frontend = FrontendStack(app, stack_id("frontend"), env=env, project=PROJECT)
+
+_alert_email = os.environ.get(
+    "PAP_ALERT_EMAIL", "michael.v.kerrigan@gmail.com"
+)
+billing_alarms = BillingAlarmsStack(
+    app,
+    stack_id("billing-alarms"),
+    env=env,
+    project=PROJECT,
+    alert_email=_alert_email,
+)
 monitoring = MonitoringStack(
     app,
     stack_id("monitoring"),
