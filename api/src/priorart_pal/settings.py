@@ -26,9 +26,15 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
     # --- AI providers ---
-    voyage_api_key: str = Field(default="", description="Voyage AI key (Secrets Manager in prod)")
-    cohere_api_key: str = Field(default="", description="Cohere key (Secrets Manager in prod)")
-    anthropic_api_key: str = Field(default="", description="Anthropic key (Secrets Manager in prod)")
+    voyage_api_key: str = Field(
+        default="", description="Voyage AI key (Secrets Manager in prod)"
+    )
+    cohere_api_key: str = Field(
+        default="", description="Cohere key (Secrets Manager in prod)"
+    )
+    anthropic_api_key: str = Field(
+        default="", description="Anthropic key (Secrets Manager in prod)"
+    )
 
     embedding_model: str = "voyage-3-large"
     rerank_model: str = "rerank-v3.5"
