@@ -31,36 +31,68 @@ See [`NOTES.md`](NOTES.md) for the running decision log and [`CHANGELOG.md`](CHA
 
 ## How it works
 
-```
-[user browser]
-     │ HTTPS
-     ▼
-┌────────────────────────────┐
-│ CloudFront → S3            │  React + Vite + TS + Tailwind
-└────────────────────────────┘
-     │  user signs in via Cognito Hosted UI → JWT
-     ▼
-┌────────────────────────────┐
-│ API Gateway (HTTP API)     │  validates JWT, throttles per-user
-└────────────────────────────┘
-     │
-     ▼
-┌────────────────────────────┐
-│ FastAPI on App Runner      │  async Python, streaming responses
-└────────────────────────────┘
-     │       │       │       │
-     ▼       ▼       ▼       ▼
-   Voyage Cohere  Claude  RDS Postgres 16
-   embed   rerank  stream  + pgvector HNSW
+The pipeline has two stages: **ingestion** (offline batch over the patent corpus) and **query** (online, sub-second per user request). Both share the same Postgres + pgvector store and the same Voyage embedding model — the model just runs in different "modes" (`document` vs `query`) for asymmetric retrieval.
+
+```mermaid
+flowchart TB
+    subgraph ingest["INGESTION · offline batch"]
+        direction TB
+        src["USPTO patents<br/>(BigQuery)"]:::source
+        parse["Parse independent<br/>claims"]:::transform
+        chunk["Chunk per claim<br/>+ paragraph anchors"]:::transform
+        extract["Ontology extraction<br/>(Claude Sonnet)"]:::ai
+        embed_doc["Embed chunks<br/>(Voyage · 1024-dim<br/>input_type=document)"]:::ai
+
+        src --> parse --> chunk
+        chunk --> extract
+        chunk --> embed_doc
+    end
+
+    subgraph db["Postgres 16 + pgvector"]
+        patents[("patents")]:::store
+        embeddings[("embeddings<br/>HNSW · cosine")]:::store
+        graphs[("ontology_graphs")]:::store
+        llm_calls[("llm_calls")]:::store
+    end
+
+    src --> patents
+    extract --> graphs
+    embed_doc --> embeddings
+
+    subgraph query["QUERY · online, per request"]
+        direction TB
+        user["User query<br/>(text or graph)"]:::source
+        embed_q["Embed query<br/>(Voyage · 1024-dim<br/>input_type=query)"]:::ai
+        ann["pgvector ANN<br/>top-50 (cosine)"]:::transform
+        rerank["Cohere Rerank v3<br/>top-50 → top-10"]:::ai
+        structural["Structural overlay<br/>(BRI matcher rules:<br/>parent_type +<br/>agency abstraction)"]:::transform
+        assemble["Assemble prompt<br/>(prompt-cached<br/>retrieved passages)"]:::transform
+        generate["Claude generation<br/>(streaming, cited)"]:::ai
+        out["Cited answer<br/>with paragraph anchors"]:::output
+
+        user --> embed_q --> ann --> rerank --> structural
+        structural --> assemble --> generate --> out
+    end
+
+    embeddings --> ann
+    graphs --> structural
+    patents --> assemble
+    generate --> llm_calls
+
+    classDef source  fill:#dbeafe,stroke:#1d4ed8,color:#0b1f3a
+    classDef transform fill:#fef3c7,stroke:#92400e,color:#0b1f3a
+    classDef ai      fill:#f3e8ff,stroke:#7c3aed,color:#0b1f3a
+    classDef store   fill:#dcfce7,stroke:#15803d,color:#0b1f3a
+    classDef output  fill:#fce7f3,stroke:#be185d,color:#0b1f3a
 ```
 
-On a search request:
+### ML / RAG concepts in play
 
-1. **Embed** the query with Voyage `voyage-3-large` → 1024-dim vector
-2. **Retrieve** the top 50 candidate passages from `pgvector` (HNSW, cosine similarity)
-3. **Rerank** those 50 with Cohere Rerank v3 → top 10
-4. **Generate** a citation-faithful synthesis with Claude (direct API, prompt caching), streaming back through API Gateway
-5. **Log** the call (tokens, latency, cost) to the `llm_calls` table; surface at `/admin/metrics`
+- **Asymmetric embeddings** — Voyage uses different prompt prefixes for documents (`input_type=document`) and queries (`input_type=query`). Improves retrieval over symmetric embedding by ~3–5 percentage points on technical text.
+- **Two-stage retrieval (recall → precision)** — Stage 1 (ANN over HNSW): cheap, broad, high recall. Stage 2 (Cohere Rerank cross-encoder): expensive per pair, much higher precision. Standard production RAG pattern.
+- **Structural retrieval (this project)** — A layer on top of vanilla RAG. Match by topology of canonical types + edges + content, not just text similarity. Two BRI matcher rules: `parent_type` (vertical, e.g. `PEDESTRIAN` ↔ `ROAD_OBSTACLE`) and agency abstraction (compositional, e.g. `VEHICLE` ↔ `TELEMATICS_CONTROLLER`). See [`docs/ontology-v1.md`](docs/ontology-v1.md).
+- **Citation-faithful generation** — The prompt is structured so every assertion links back to a retrieved passage by anchor. Claude refuses if retrieved context is insufficient rather than confabulating cites.
+- **Prompt caching as a cost lever** — System prompt + retrieved passages share the cache prefix. Cache hits are ~10× cheaper than fresh tokens; the system prompt + ontology rarely change, so most calls hit cache for the bulk of input tokens.
 
 ---
 
