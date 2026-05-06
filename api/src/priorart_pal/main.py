@@ -12,8 +12,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from priorart_pal import __version__
+from priorart_pal.db.session import close_engine
 from priorart_pal.logging_config import configure_logging, get_logger
-from priorart_pal.routers import health
+from priorart_pal.routers import health, search
 from priorart_pal.settings import get_settings
 
 configure_logging()
@@ -25,6 +26,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     log.info("api.startup", env=settings.env, version=__version__)
     yield
+    await close_engine()
     log.info("api.shutdown")
 
 
@@ -36,3 +38,4 @@ app = FastAPI(
 )
 
 app.include_router(health.router)
+app.include_router(search.router)
