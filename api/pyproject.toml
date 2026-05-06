@@ -13,6 +13,7 @@ dependencies = [
     "psycopg[binary,pool]>=3.2.0",
     "pgvector>=0.3.6",
     "alembic>=1.13.0",
+    "voyageai>=0.3.2",
 ]
 
 [dependency-groups]
@@ -47,6 +48,12 @@ files = ["src"]
 [[tool.mypy.overrides]]
 # pgvector ships without py.typed; SQLAlchemy stubs cover the parts we use.
 module = "pgvector.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# voyageai SDK ships without py.typed; thin wrapper in embed/voyage.py
+# surfaces our own typed return values.
+module = "voyageai.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
