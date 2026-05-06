@@ -9,6 +9,10 @@ dependencies = [
     "pydantic>=2.9.0",
     "pydantic-settings>=2.5.0",
     "structlog>=24.4.0",
+    "sqlalchemy[asyncio]>=2.0.30",
+    "psycopg[binary,pool]>=3.2.0",
+    "pgvector>=0.3.6",
+    "alembic>=1.13.0",
 ]
 
 [dependency-groups]
@@ -39,6 +43,11 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "ASYNC"]
 python_version = "3.12"
 strict = true
 files = ["src"]
+
+[[tool.mypy.overrides]]
+# pgvector ships without py.typed; SQLAlchemy stubs cover the parts we use.
+module = "pgvector.*"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
