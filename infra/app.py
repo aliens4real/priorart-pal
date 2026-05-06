@@ -9,8 +9,8 @@ import os
 
 import aws_cdk as cdk
 
-from stacks.app_runner_stack import AppRunnerStack
 from stacks.api_gateway_stack import ApiGatewayStack
+from stacks.app_runner_stack import AppRunnerStack
 from stacks.auth_stack import AuthStack
 from stacks.database_stack import DatabaseStack
 from stacks.frontend_stack import FrontendStack
