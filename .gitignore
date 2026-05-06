@@ -47,3 +47,11 @@ logs/
 
 # Local-only patent corpus (never commit)
 data_cache/
+
+# Eval datasets are bulky; only summaries belong in git
+evals/datasets/*.json
+evals/datasets/*.jsonl
+evals/results/*
+!evals/results/.gitkeep
+!evals/results/SUMMARY.md
+!evals/datasets/.gitkeep
