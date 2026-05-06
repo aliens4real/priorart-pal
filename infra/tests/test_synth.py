@@ -10,9 +10,9 @@ import aws_cdk as cdk
 from aws_cdk import assertions
 
 from stacks.auth_stack import AuthStack
+from stacks.billing_alarms_stack import BillingAlarmsStack
 from stacks.database_stack import DatabaseStack
 from stacks.frontend_stack import FrontendStack
-from stacks.monitoring_stack import MonitoringStack
 from stacks.networking_stack import NetworkingStack
 from stacks.secrets_stack import SecretsStack
 
@@ -78,15 +78,15 @@ def test_frontend_bucket_blocks_public_access():
     )
 
 
-def test_monitoring_billing_alarms_at_20_and_50_with_sns():
+def test_billing_alarms_stack_has_sns_and_two_alarms():
+    """Billing alarms are in a standalone stack with no service deps —
+    safe to deploy first on a fresh account before any other stack."""
     app = cdk.App()
-    s = MonitoringStack(
+    s = BillingAlarmsStack(
         app,
-        "mon",
+        "billing",
         env=_env(),
         project="priorart-pal",
-        api_id="placeholder-api-id",
-        app_runner_service_arn="placeholder-arn",
         alert_email="dev@example.com",
     )
     t = assertions.Template.from_stack(s)
@@ -115,4 +115,22 @@ def test_monitoring_billing_alarms_at_20_and_50_with_sns():
             "Threshold": 50,
             "ComparisonOperator": "GreaterThanThreshold",
         },
+    )
+
+
+def test_billing_alarms_stack_has_no_service_dependencies():
+    """The whole point of splitting BillingAlarmsStack out: no cross-stack
+    refs to api-gateway / auth / app-runner / etc. so it deploys first on
+    a fresh account."""
+    app = cdk.App()
+    s = BillingAlarmsStack(
+        app,
+        "billing",
+        env=_env(),
+        project="priorart-pal",
+        alert_email="dev@example.com",
+    )
+    assert not s.dependencies, (
+        f"BillingAlarmsStack should have no stack dependencies, "
+        f"got: {s.dependencies}"
     )
