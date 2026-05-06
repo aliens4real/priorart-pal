@@ -74,7 +74,11 @@ class AuthStack(Stack):
             auth_flows=cognito.AuthFlow(user_srp=True),
             o_auth=cognito.OAuthSettings(
                 flows=cognito.OAuthFlows(authorization_code_grant=True),
-                scopes=[cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE],
+                scopes=[
+                    cognito.OAuthScope.OPENID,
+                    cognito.OAuthScope.EMAIL,
+                    cognito.OAuthScope.PROFILE,
+                ],
                 callback_urls=["http://localhost:5173/callback"],
                 logout_urls=["http://localhost:5173/"],
             ),

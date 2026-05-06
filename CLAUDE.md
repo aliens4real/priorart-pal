@@ -75,3 +75,23 @@ Show production-shaped RAG end-to-end: vector retrieval, reranking, citation-fai
 - VPC endpoints for AI provider calls (App Runner egresses to internet)
 - Production secret rotation
 - Per-user fine-grained authorization beyond admin / non-admin
+
+## Agent skills
+
+Matt Pocock's engineering skills (`mattpocock/skills`) are installed at the project level under `.claude/skills/` — `grill-me`, `grill-with-docs`, `to-prd`, `to-issues`, `zoom-out`, `tdd`, `diagnose`, `improve-codebase-architecture`, `setup-matt-pocock-skills`, `triage`. They become available at the next session start.
+
+### Issue tracker
+
+GitHub Issues at `aliens4real/priorart-pal`, accessed via the `gh` CLI. See [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).
+
+### Triage labels
+
+Default `mattpocock/skills` vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) — all five labels exist on the repo. See [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md).
+
+### Domain docs
+
+Single-context layout. `CONTEXT.md` at the repo root for the domain glossary; `docs/adr/` for architectural decision records; `docs/ontology-v1.md` for the live canonical-type vocabulary used by the structural retriever. See [`docs/agents/domain.md`](docs/agents/domain.md).
+
+## Diagrams
+
+D2 (Terrastruct's declarative diagramming language) is installed locally (`brew install d2`). Convention: source `.d2` files live under `docs/diagrams/`, with rendered `.svg` committed alongside for direct GitHub README rendering.

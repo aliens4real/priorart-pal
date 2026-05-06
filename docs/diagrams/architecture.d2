@@ -1,0 +1,142 @@
+# PriorArt Pal — system architecture (v1)
+#
+# Render:  d2 docs/diagrams/architecture.d2 docs/diagrams/architecture.svg
+# Watch:   d2 --watch docs/diagrams/architecture.d2 docs/diagrams/architecture.svg
+
+direction: down
+
+classes: {
+  external: {
+    style: {
+      fill: "#e0e7ff"
+      stroke: "#3730a3"
+    }
+  }
+  aws: {
+    style: {
+      fill: "#fff4d6"
+      stroke: "#d97706"
+    }
+  }
+  ai: {
+    style: {
+      fill: "#f3e8ff"
+      stroke: "#7c3aed"
+    }
+  }
+  data: {
+    style: {
+      fill: "#dcfce7"
+      stroke: "#15803d"
+    }
+  }
+  obs: {
+    style: {
+      fill: "#fef3c7"
+      stroke: "#92400e"
+    }
+  }
+}
+
+user: "User browser" {
+  shape: person
+  class: external
+}
+
+edge: "Edge / auth (AWS managed)" {
+  class: aws
+
+  cloudfront: "CloudFront + S3\n(React + Vite + TS SPA)" {
+    class: aws
+  }
+  cognito: "Cognito User Pool\n+ Hosted UI" {
+    class: aws
+  }
+  apigw: "API Gateway HTTP API\nJWT authorizer\nUsage plan: 10/hr · 100/day" {
+    class: aws
+  }
+}
+
+compute: "Application compute" {
+  class: aws
+
+  apprunner: "AWS App Runner\nFastAPI in Docker (Python 3.12)\nasync streaming responses\nfrom ECR" {
+    class: aws
+  }
+
+  vpc: "VPC (private-egress + isolated)" {
+    class: aws
+    style.stroke-dash: 3
+
+    connector: "VPC connector\n(App Runner ENIs in private-egress)" {
+      class: aws
+    }
+  }
+}
+
+data: "Data plane" {
+  class: data
+
+  rds: "RDS Postgres 16\n+ pgvector (HNSW)\ndb.t4g.micro · isolated subnets\nschemas: patents · embeddings ·\nusers · llm_calls · ontology" {
+    class: data
+  }
+
+  secrets: "Secrets Manager\nVoyage · Cohere · Anthropic ·\nDB credentials" {
+    class: data
+  }
+}
+
+ai: "AI providers (external)" {
+  class: ai
+
+  voyage: "Voyage AI\nvoyage-3-large\n→ 1024-dim embeddings" {
+    class: ai
+  }
+  cohere: "Cohere\nRerank v3\n(top-50 → top-10)" {
+    class: ai
+  }
+  anthropic: "Anthropic Claude\n(streaming + prompt cache)\ncitation-faithful generation" {
+    class: ai
+  }
+}
+
+obs: "Observability + cost guardrails" {
+  class: obs
+
+  cw: "CloudWatch logs\nstructured JSON\n(structlog)" {
+    class: obs
+  }
+  alarms: "Billing alarms\nUSD 20 / USD 50 thresholds" {
+    class: obs
+  }
+  metrics: "/admin/metrics endpoint\nreads llm_calls table\n(tokens · latency · cost per call)" {
+    class: obs
+  }
+}
+
+# --- request flow ---
+user -> edge.cloudfront: "GET /\n(HTTPS)"
+user -> edge.cognito: "sign in\n(Hosted UI redirect)"
+edge.cognito -> user: "JWT (id · access · refresh)"
+user -> edge.apigw: "POST /search\nAuthorization: Bearer <jwt>"
+edge.apigw -> edge.cognito: "validate JWT\n(issuer + audience)"
+edge.apigw -> compute.apprunner: "forward request"
+
+compute.apprunner -> ai.voyage: "embed query"
+compute.apprunner -> data.rds: "pgvector ANN\ntop-50 candidates"
+compute.apprunner -> ai.cohere: "rerank top-50"
+compute.apprunner -> ai.anthropic: "generate w/ cached context"
+ai.anthropic -> compute.apprunner: "streamed tokens"
+compute.apprunner -> edge.apigw: "streamed response"
+edge.apigw -> user: "SSE / streamed answer\n+ paragraph cites"
+
+# --- supporting flows ---
+compute.apprunner -> data.secrets: "read API keys\n(via IAM role)"
+compute.apprunner -> data.rds: "write llm_calls row\n(tokens · latency · cost)"
+compute.apprunner -> obs.cw: "structured log lines"
+compute.vpc.connector -> data.rds: "Postgres :5432\n(via security group)"
+obs.metrics -> data.rds: "SELECT FROM llm_calls\n(admin only)"
+
+# Layout hints
+edge -> compute: ""
+compute -> data: ""
