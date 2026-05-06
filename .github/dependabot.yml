@@ -25,7 +25,15 @@ updates:
       prefix: "chore(deps,infra)"
     labels: ["dependencies", "infra"]
 
-  # Frontend npm deps
+  # Frontend npm deps.
+  #
+  # Groups deliberately pair packages with hard peer-dep coupling so that
+  # bumping one half without the other doesn't deadlock npm install. The
+  # vite-ecosystem and vitest-ecosystem groupings emerged from a real
+  # PR-deadlock incident on 2026-05-06 (closed PRs #5 / #8 / #9 / #10):
+  # vite@8 broke against @vitejs/plugin-react@4, and vitest@4 broke
+  # against @vitest/coverage-v8@2. Updating either half alone failed
+  # `npm ci`. The fix is to bump them as a coordinated group.
   - package-ecosystem: "npm"
     directory: "/web"
     schedule:
@@ -36,10 +44,35 @@ updates:
       prefix: "chore(deps,web)"
     labels: ["dependencies", "web"]
     groups:
+      # Vite + first-party plugins. Bumping vite without plugin-react
+      # (or vice versa) breaks peer-dep resolution.
+      vite-ecosystem:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+      # Vitest + coverage adapter. @vitest/coverage-v8's major version
+      # must match vitest's; ungrouped, Dependabot opens conflicting PRs.
+      vitest-ecosystem:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+      # React runtime + types. Distinct from the build/test stacks above.
       react-ecosystem:
-        patterns: ["react*", "@types/react*", "@vitejs/*"]
-      lint-and-test:
-        patterns: ["eslint*", "vitest*", "@testing-library/*"]
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+      # Lint + formatter tooling. No peer-dep coupling to the build/
+      # test stacks; safe to bump independently.
+      lint-tooling:
+        patterns:
+          - "eslint*"
+          - "typescript-eslint*"
+          - "@testing-library/*"
+          - "globals"
+          - "prettier*"
+          - "jsdom"
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
