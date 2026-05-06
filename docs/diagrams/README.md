@@ -1,8 +1,20 @@
 # Diagrams
 
-Software architecture diagrams as D2 source + rendered SVG.
+Two tools, two purposes:
 
-## Convention
+- **D2** for **structural / system architecture diagrams** (boxes, layers, deployment topologies). Source `.d2` files live here; rendered `.svg` is committed alongside.
+- **Mermaid** for **flow / pipeline diagrams** (data flow, sequence, RAG pipeline). Embedded inline in markdown — GitHub renders it natively, no compile step.
+
+## When to use which
+
+| Diagram type | Tool | Where it lives |
+|---|---|---|
+| Static architecture (deployment, components, layers) | D2 | `docs/diagrams/<name>.d2` + `<name>.svg` |
+| Data flow / RAG pipeline / ML stages | Mermaid | Inline in `README.md`, `NOTES.md`, etc. |
+| Sequence (interaction over time) | Mermaid | Inline in markdown |
+| Hand-drawn presentation slides (interview-time) | Excalidraw | Separate tool, not committed here |
+
+## D2 workflow
 
 - Source: `<name>.d2`
 - Rendered: `<name>.svg` (committed alongside source for direct GitHub README rendering)
@@ -11,15 +23,24 @@ Software architecture diagrams as D2 source + rendered SVG.
 
 ## Current diagrams
 
-| File | Subject |
-|---|---|
-| [`architecture.svg`](architecture.svg) | System architecture v1 — edge / auth, App Runner, AI providers, data plane, observability |
+| File | Tool | Subject |
+|---|---|---|
+| [`architecture.svg`](architecture.svg) | D2 | System architecture v1 — edge / auth, App Runner, AI providers, data plane, observability |
+| _(in repo `README.md`)_ | Mermaid | RAG pipeline — ingestion + query stages with ML concept callouts |
 
 ## Adding a new diagram
+
+**For D2** (architecture / static structure):
 
 1. Write `<name>.d2`. See existing files for style conventions (color classes, layout, label format).
 2. Render: `d2 <name>.d2 <name>.svg`
 3. Commit both files.
+
+**For Mermaid** (flow / sequence / pipeline):
+
+1. Author the diagram inline in the markdown file where it belongs (`README.md`, a `NOTES.md` section, etc.) wrapped in a ` ```mermaid ` code fence.
+2. Verify it renders correctly by viewing the file on GitHub (or via VS Code's Mermaid preview extension).
+3. No SVG to commit.
 
 ## Color classes (used across diagrams)
 
