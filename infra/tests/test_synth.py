@@ -12,6 +12,7 @@ from aws_cdk import assertions
 from stacks.auth_stack import AuthStack
 from stacks.database_stack import DatabaseStack
 from stacks.frontend_stack import FrontendStack
+from stacks.monitoring_stack import MonitoringStack
 from stacks.networking_stack import NetworkingStack
 from stacks.secrets_stack import SecretsStack
 
@@ -73,5 +74,45 @@ def test_frontend_bucket_blocks_public_access():
                 "IgnorePublicAcls": True,
                 "RestrictPublicBuckets": True,
             }
+        },
+    )
+
+
+def test_monitoring_billing_alarms_at_20_and_50_with_sns():
+    app = cdk.App()
+    s = MonitoringStack(
+        app,
+        "mon",
+        env=_env(),
+        project="priorart-pal",
+        api_id="placeholder-api-id",
+        app_runner_service_arn="placeholder-arn",
+        alert_email="dev@example.com",
+    )
+    t = assertions.Template.from_stack(s)
+    # SNS topic + email subscription
+    t.resource_count_is("AWS::SNS::Topic", 1)
+    t.has_resource_properties(
+        "AWS::SNS::Subscription",
+        {"Protocol": "email", "Endpoint": "dev@example.com"},
+    )
+    # Two alarms, both on AWS/Billing EstimatedCharges
+    t.resource_count_is("AWS::CloudWatch::Alarm", 2)
+    t.has_resource_properties(
+        "AWS::CloudWatch::Alarm",
+        {
+            "Namespace": "AWS/Billing",
+            "MetricName": "EstimatedCharges",
+            "Threshold": 20,
+            "ComparisonOperator": "GreaterThanThreshold",
+        },
+    )
+    t.has_resource_properties(
+        "AWS::CloudWatch::Alarm",
+        {
+            "Namespace": "AWS/Billing",
+            "MetricName": "EstimatedCharges",
+            "Threshold": 50,
+            "ComparisonOperator": "GreaterThanThreshold",
         },
     )

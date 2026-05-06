@@ -76,6 +76,9 @@ api_gateway = ApiGatewayStack(
     app_runner_url=app_runner.service_url,
 )
 frontend = FrontendStack(app, stack_id("frontend"), env=env, project=PROJECT)
+_alert_email = os.environ.get(
+    "PAP_ALERT_EMAIL", "michael.v.kerrigan@gmail.com"
+)
 monitoring = MonitoringStack(
     app,
     stack_id("monitoring"),
@@ -83,6 +86,7 @@ monitoring = MonitoringStack(
     project=PROJECT,
     api_id=api_gateway.api_id,
     app_runner_service_arn=app_runner.service_arn,
+    alert_email=_alert_email,
 )
 
 cdk.Tags.of(app).add("project", PROJECT)

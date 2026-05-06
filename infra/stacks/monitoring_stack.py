@@ -1,14 +1,33 @@
-"""CloudWatch dashboard + billing alarm references.
+"""CloudWatch dashboard + billing alarms.
 
-Pattern note: The actual billing alarms (at $20 and $50) are set up in the
-AWS console at the account level — they're easier to manage there. This
-stack creates a per-service dashboard that surfaces request count, latency,
-errors, and links to the alarm pages.
+Two responsibilities:
+
+1. Per-service dashboard surfacing request count / latency / error metrics
+   for the API Gateway and (later) App Runner / RDS.
+2. Account-wide billing alarms at the project's two budget thresholds
+   (USD 20 and USD 50). Alarm fires -> SNS topic -> email to the alert
+   recipient.
+
+Important AWS quirks for billing alarms:
+
+- The `AWS/Billing` metric namespace lives **only in us-east-1**, regardless
+  of where the rest of your stacks are. We deploy this stack in us-east-1
+  anyway, so this is a non-issue here — flagging only because it bites if
+  someone clones the pattern into a different region.
+- The alarm requires "Receive Billing Alerts" to be enabled in the AWS
+  account's billing preferences. That's a one-time per-account toggle in
+  the console; **CDK cannot toggle it** (no API exists). If the alarm
+  shows `INSUFFICIENT_DATA` after deploy, that's almost always why.
+- Email subscriptions need to be confirmed via a click-through in the
+  email CloudWatch sends. Until confirmed, the topic doesn't deliver.
 """
 from __future__ import annotations
 
-from aws_cdk import Stack
+from aws_cdk import CfnOutput, Duration, Stack
 from aws_cdk import aws_cloudwatch as cw
+from aws_cdk import aws_cloudwatch_actions as cw_actions
+from aws_cdk import aws_sns as sns
+from aws_cdk import aws_sns_subscriptions as sns_subs
 from constructs import Construct
 
 
@@ -21,9 +40,62 @@ class MonitoringStack(Stack):
         project: str,
         api_id: str,
         app_runner_service_arn: str,
+        alert_email: str,
+        billing_thresholds_usd: tuple[int, ...] = (20, 50),
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        # ── billing alarms ────────────────────────────────────────────────
+
+        self.billing_topic = sns.Topic(
+            self,
+            "BillingAlerts",
+            display_name=f"{project} billing alerts",
+            topic_name=f"{project}-billing-alerts",
+        )
+        self.billing_topic.add_subscription(
+            sns_subs.EmailSubscription(alert_email)
+        )
+
+        # AWS/Billing publishes once every ~6 hours. A single-period
+        # evaluation is enough — these alarms are budget tripwires, not
+        # latency-sensitive signals.
+        billing_metric = cw.Metric(
+            namespace="AWS/Billing",
+            metric_name="EstimatedCharges",
+            dimensions_map={"Currency": "USD"},
+            statistic="Maximum",
+            period=Duration.hours(6),
+        )
+
+        self.billing_alarms: list[cw.Alarm] = []
+        for threshold in billing_thresholds_usd:
+            alarm = cw.Alarm(
+                self,
+                f"Billing{threshold}",
+                alarm_name=f"{project}-billing-{threshold}-usd",
+                alarm_description=(
+                    f"Alerts when estimated AWS charges exceed USD {threshold} "
+                    f"for the month. Budget guardrail; not latency-sensitive."
+                ),
+                metric=billing_metric,
+                threshold=threshold,
+                evaluation_periods=1,
+                comparison_operator=cw.ComparisonOperator.GREATER_THAN_THRESHOLD,
+                treat_missing_data=cw.TreatMissingData.IGNORE,
+            )
+            alarm.add_alarm_action(cw_actions.SnsAction(self.billing_topic))
+            self.billing_alarms.append(alarm)
+
+        CfnOutput(
+            self,
+            "BillingTopicArn",
+            value=self.billing_topic.topic_arn,
+            description="Subscribe additional emails / Slack here as needed.",
+        )
+
+        # ── per-service dashboard ─────────────────────────────────────────
 
         self.dashboard = cw.Dashboard(
             self,
